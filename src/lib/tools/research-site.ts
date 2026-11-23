@@ -85,7 +85,6 @@ export function researchSiteTool(sessionId: string) {
           content: { digest: contentDigest },
           field_sources: { name: "scraped", brand: "scraped" },
           // A fresh research starts the profile over: never keep an earlier site's goals.
-          category: null,
           summary: null,
           suggested_goals: null,
           updated_at: new Date().toISOString(),

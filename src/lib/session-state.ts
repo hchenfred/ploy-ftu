@@ -54,7 +54,7 @@ export async function loadSessionState(sessionId: string): Promise<LoadResult> {
 
     const { data: profile, error: profileError } = await db
       .from("business_profiles")
-      .select("url, name, category, summary, brand, content, suggested_goals")
+      .select("url, name, summary, brand, content, suggested_goals")
       .eq("session_id", sessionId)
       .maybeSingle();
     if (profileError) {
@@ -70,7 +70,6 @@ export async function loadSessionState(sessionId: string): Promise<LoadResult> {
           ? {
               name: profile.name ?? null,
               domain: domainOf(profile.url),
-              category: profile.category ?? null,
               summary: profile.summary ?? null,
               brand: profile.brand ?? {},
               description: profile.content?.description ?? null,

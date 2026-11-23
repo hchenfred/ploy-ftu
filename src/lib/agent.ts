@@ -1,11 +1,19 @@
 import "server-only";
 import type { InferUITools, UIMessage } from "ai";
 import { researchSiteTool } from "@/lib/tools/research-site";
+import { suggestGoalsTool } from "@/lib/tools/suggest-goals";
 
 // The agent's tool set for one session. Milestone 1 has a single tool.
 export function buildTools(sessionId: string) {
   return {
     researchSite: researchSiteTool(sessionId),
+  };
+}
+
+// The goals step's tool set (used by POST /api/goals/suggest, not by the chat agent, so FtuTools is unchanged).
+export function buildGoalTools(sessionId: string) {
+  return {
+    suggestGoals: suggestGoalsTool(sessionId),
   };
 }
 

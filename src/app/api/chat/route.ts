@@ -8,6 +8,7 @@ import {
 } from "ai";
 import { z } from "zod";
 import { buildTools } from "@/lib/agent";
+import { isRateLimitError, RATE_LIMIT_MESSAGE } from "@/lib/ai-errors";
 import { SYSTEM_PROMPT } from "@/lib/prompts";
 
 // Scraping + a model reply can take ~40 s; allow up to 60 s on Vercel.
@@ -17,22 +18,6 @@ const BodySchema = z.object({
   sessionId: z.uuid(),
   messages: z.array(z.custom<UIMessage>()).min(1),
 });
-
-// Message shown in the UI when the model provider rate-limits us. The default
-// model is a free-tier one capped at ~5 requests/min, so this is the most likely
-// failure in development.
-const RATE_LIMIT_MESSAGE =
-  "Rate limit reached: the free-tier AI model allows only about 5 requests per minute. Wait a minute, then retry.";
-
-function isRateLimitError(error: unknown): boolean {
-  // Walk the cause chain: the SDK wraps the gateway's 429 in a retry error.
-  for (let e: unknown = error, depth = 0; e && depth < 5; depth++) {
-    const err = e as { statusCode?: number; message?: string; cause?: unknown; lastError?: unknown };
-    if (err.statusCode === 429 || /rate.?limit/i.test(err.message ?? "")) return true;
-    e = err.lastError ?? err.cause;
-  }
-  return false;
-}
 
 // POST /api/chat: the onboarding agent. Streams text and tool parts to useChat.
 export async function POST(req: Request) {

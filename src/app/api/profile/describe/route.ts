@@ -36,7 +36,6 @@ export async function POST(req: Request) {
       brand: {},
       content: { description },
       field_sources: { description: "user" },
-      category: null,
       summary: null,
       suggested_goals: null,
       updated_at: new Date().toISOString(),

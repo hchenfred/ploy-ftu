@@ -52,9 +52,9 @@ Page generation, artifacts, fal, uploads, publishing, `/p/[slug]`, `/metrics`, a
 
 ## 4. Verified facts about the M1 code (the spec relies on these)
 
-- `sessions.status` exists with check `('site','goal','building','live')`; `goal_type`, `goal_label`, `goal_custom_text` exist; nothing writes them yet. `business_profiles` has `category`, `summary`, `suggested_goals jsonb` (nullable), `content jsonb`, `field_sources jsonb`. Verified in `supabase/migrations/0001_init.sql`.
+- `sessions.status` exists with check `('site','goal','building','live')`; `goal_type`, `goal_label`, `goal_custom_text` exist; nothing writes them yet. `business_profiles` has `category` (unused in M1 and M2: see the note in FR-9), `summary`, `suggested_goals jsonb` (nullable), `content jsonb`, `field_sources jsonb`. Verified in `supabase/migrations/0001_init.sql`.
 - `researchSite` (`src/lib/tools/research-site.ts`) is the **only** writer of `business_profiles`, and only on success. The no-website path calls no tool, so **the user's description exists only in the chat transcript and is never saved.** The brief assumed otherwise; M2 fixes it (FR-8).
-- The `researchSite` upsert does not touch `category`, `summary`, `suggested_goals`. If a user returns to step 1 and researches another site, stale goals would survive. M2 clears them (FR-8).
+- The `researchSite` upsert does not touch `summary`, `suggested_goals`. If a user returns to step 1 and researches another site, stale goals would survive. M2 clears them (FR-8).
 - `src/lib/agent.ts` exports `buildTools(sessionId)` and the `FtuUIMessage` type derived from it. `/api/chat` uses `isStepCount(4)` and `toUIMessageStream({ stream: result.stream, onError })`.
 - `page.tsx` is one client component. "Use a different website" (`startOver`) clears chat state only; it does not touch the server.
 - `SessionProvider` owns `ftu_session_id` in `localStorage`; `useSession()` returns `{ sessionId, error, retry }`. It never checks that a stored id still exists server-side.
@@ -71,7 +71,7 @@ Page generation, artifacts, fal, uploads, publishing, `/p/[slug]`, `/metrics`, a
   type SessionState = {
     status: "site" | "goal" | "building" | "live";
     profile: null | {
-      name: string | null; domain: string | null; category: string | null; summary: string | null;
+      name: string | null; domain: string | null; summary: string | null;
       brand: BrandProfile;                 // from research-site.ts; {} for the describe path
       description: string | null;          // content.description (describe path)
       suggestedGoals: SuggestedGoal[] | null;
@@ -94,8 +94,8 @@ A helper `src/lib/session-state.ts` (`import "server-only"`) exports `advanceSta
 | `goal → building` | `POST /api/goals/choose` saved a valid goal |
 | `building → goal`, `goal → site` | `POST /api/step/back` (FR-12) |
 
-- **Describe path.** The client calls `POST /api/profile/describe` with `{ sessionId, description }` (Zod: uuid, string trimmed, 1-500 chars) when the user submits the one-sentence box, in parallel with `sendMessage`. The route **replaces** the profile row: `url: null`, `name: null`, `brand: {}`, `content: { description }`, `field_sources: { description: "user" }`, `category/summary/suggested_goals: null`, then `advanceStatus(site → goal)`, then logs `description_saved { chars }`. It is the only place the description is persisted; the model is not involved.
-- **Fresh research clears downstream.** The `researchSite` upsert additionally sets `category`, `summary`, `suggested_goals` to `null` so a different website never shows the old site's goals.
+- **Describe path.** The client calls `POST /api/profile/describe` with `{ sessionId, description }` (Zod: uuid, string trimmed, 1-500 chars) when the user submits the one-sentence box, in parallel with `sendMessage`. The route **replaces** the profile row: `url: null`, `name: null`, `brand: {}`, `content: { description }`, `field_sources: { description: "user" }`, `summary/suggested_goals: null`, then `advanceStatus(site → goal)`, then logs `description_saved { chars }`. It is the only place the description is persisted; the model is not involved.
+- **Fresh research clears downstream.** The `researchSite` upsert additionally sets `summary`, `suggested_goals` to `null` so a different website never shows the old site's goals.
 - Because `advanceStatus` runs inside the tool, `status = 'goal'` can be set before the user has read the brand card and the one-sentence summary. The UI therefore does **not** switch steps on its own: `SiteStep` shows a **Continue** button once the chat turn finishes with a successful research (or a description was sent and the reply streamed). Clicking it asks the shell to re-read `SessionState` (`onDone`). The shell, not the click, decides the step from `status`.
 - A refresh between "status = goal" and clicking Continue lands on step 2. This is accepted.
 
@@ -111,26 +111,26 @@ type SuggestedGoal = { goalType: GoalType; label: string; reason: string; source
 
 // inputSchema
 z.object({
-  category: z.string().min(2).max(40).describe("Business category, e.g. 'neighborhood bakery'"),
-  summary: z.string().min(10).max(200).describe("One sentence: who they are and who they sell to"),
+  summary: z.string().min(10).describe("One short sentence: who they are and who they sell to"),
   goals: z.array(z.object({
     goalType: z.enum(GOAL_TYPES),
-    label: z.string().min(5).max(60),
-    reason: z.string().min(10).max(140).describe("Why this fits this business, one sentence"),
+    label: z.string().min(5).describe("The outcome as a short, complete phrase of about 5 to 8 words"),
+    reason: z.string().min(10).describe("Why this fits this business: one short, complete sentence naming something specific"),
   })).min(1).max(4).describe("All four goal types, one each, most relevant first"),
 })
 
 // output
 type SuggestGoalsOutput =
-  | { ok: true; category: string; summary: string; goals: SuggestedGoal[] /* always 4 */; filled: number }
+  | { ok: true; summary: string; goals: SuggestedGoal[] /* always 4 */; filled: number }
   | { ok: false; reason: "no_profile" | "invalid_output" | "unknown" };
 ```
 
-- Built per request: `suggestGoalsTool(sessionId)` (same convention as `researchSiteTool`). The session id comes from the route, never from the model; the model only supplies category, summary, goals. The schema asks for all four types, most relevant first (the prompt in §7 says so). The array is `min(1)` rather than `min(4)` on purpose: with a weak model, a partial answer (say 3 goals, or 4 with a duplicate type) should be rescued by the fill step instead of failing Zod and discarding a good category and summary.
+- **No hard length limits on model-written text in the schema.** A `max()` in the schema sent to the model made it squeeze its text and stop mid-phrase ("...inquiries from cafes and"), and a Zod `max()` would reject the whole answer. The descriptions and `GOALS_PROMPT` ask for short, complete text instead; the server enforces `LIMITS` (`summary` 200, `label` 60, `reason` 140) with `clip()` in `src/lib/goals.ts`, which trims at a word boundary and never leaves a dangling "and"/"for". Applied in `normalizeGoals` and the tool.
+- Built per request: `suggestGoalsTool(sessionId)` (same convention as `researchSiteTool`). The session id comes from the route, never from the model; the model only supplies the summary and goals. (**`category` was dropped from M2** by the human: nothing reads it before the M3 image prompt, and it was one more field for the free model to get wrong. The `business_profiles.category` column stays in the schema, unused; M3 can fill it where it is needed.) The schema asks for all four types, most relevant first (the prompt in §7 says so). The array is `min(1)` rather than `min(4)` on purpose: with a weak model, a partial answer (say 3 goals, or 4 with a duplicate type) should be rescued by the fill step instead of failing Zod and discarding a good category and summary.
 - `execute`:
   1. Load `business_profiles` for the session. Missing row or no usable content (no `content.digest` and no `content.description`) → `{ ok:false, reason:"no_profile" }`.
   2. Normalize: trim strings, **dedupe by `goalType`** (keep the first, which preserves the model's relevance order), drop entries with a goal type outside the enum, tag each kept goal `source: "model"`. If **zero** usable model goals remain → `invalid_output`. Otherwise **fill every missing type** from `DEFAULT_GOALS`, appended after the model's goals in `GOAL_TYPES` order and tagged `source: "default"`, so the result is always exactly 4 goals, one per type. `filled` = number of default-filled goals (0 to 3).
-  3. Update `business_profiles`: `category`, `summary`, `suggested_goals = goals` (the 4 tagged goals), `field_sources = { ...existing, category: "inferred", summary: "inferred", suggested_goals: "inferred" }`, `updated_at`.
+  3. Update `business_profiles`: `summary`, `suggested_goals = goals` (the 4 tagged goals), `field_sources = { ...existing, summary: "inferred", suggested_goals: "inferred" }`, `updated_at`.
   4. Return `{ ok:true, … }`. (`goals_suggested` is logged by the route, which owns timing and the source.)
 - **Never throws.** Any DB error is caught → `tool_failed { tool: "suggestGoals", reason, detail }` and `{ ok:false, reason }`. If the model's tool arguments fail the Zod schema, the SDK reports a tool-call error to the route, which handles it (FR-10) and logs `reason: "invalid_output"`.
 
@@ -145,7 +145,7 @@ Why a route and not the `/api/chat` agent loop: the goals call has no conversati
   - `export const maxDuration = 30`.
 - Response (always HTTP 200 after the guards, never a 500 page):
   ```ts
-  { ok: true; source: "model" | "saved"; category: string; summary: string; goals: SuggestedGoal[] }
+  { ok: true; source: "model" | "saved"; summary: string; goals: SuggestedGoal[] }
   | { ok: false; reason: "no_profile" | "invalid_output" | "rate_limited" | "timeout" | "unknown" }
   ```
   `rate_limited` reuses `isRateLimitError` (move it from `/api/chat/route.ts` to `src/lib/ai-errors.ts` and import it in both; no behavior change).
@@ -168,7 +168,7 @@ Why a route and not a tool: choosing is a user click, not an agent decision. A r
 ### FR-12 Route `POST /api/step/back`
 - Body: `{ sessionId: uuid }`. Moves one step back, idempotent at `site`:
   - `building → goal`: clears `goal_type`, `goal_label`, `goal_custom_text`. Keeps `suggested_goals`.
-  - `goal → site`: clears `goal_*` and `suggested_goals`, `category`, `summary`. Keeps the profile row (the next research or description replaces it).
+  - `goal → site`: clears `goal_*` and `suggested_goals`, `summary`. Keeps the profile row (the next research or description replaces it).
   - `site → site`: no-op, 200.
 - Logs `step_back { from, to }` (only if changed). Response: `{ status }`.
 - The "Use a different website" link calls this route, **then** resets local chat state (`stop()`, `setMessages([])`, …), then refreshes `SessionState`. If the route fails, show the alert + retry; do not clear local state (server and screen must not disagree).
@@ -356,11 +356,11 @@ Everything must pass **on the deployed Vercel URL**, not just locally. `[M]` = m
 - [ ] AC-21 `GET /api/sessions/[id]` returns 400 for a non-uuid, 404 for an unknown uuid, and never contains `digest`. A stale `ftu_session_id` (404) creates a new session and shows step 1. `[M]` (stale id) + `[L]` (status codes via `fetch`)
 - [ ] AC-22 After a successful `researchSite`, `sessions.status = 'goal'` and one `step_changed {from:'site',to:'goal'}` exists; the brand card and summary stay visible until Continue is clicked, then GoalStep shows. `[L]`
 - [ ] AC-23 The describe path persists the description: `business_profiles.content.description` equals the typed text, `url` is null, status is `goal`, `description_saved` exists. `[L]`
-- [ ] AC-24 Researching a second site after going back leaves `suggested_goals`, `category`, `summary` null until goals are regenerated (no stale goals). `[L]` (DB check after `back` + new research, or `[D]`)
+- [ ] AC-24 Researching a second site after going back leaves `suggested_goals`, `summary` null until goals are regenerated (no stale goals). `[L]` (DB check after `back` + new research, or `[D]`)
 
 **Happy path**
 - [ ] AC-25 Entering step 2 without saved suggestions shows "Finding the best goals for…" within 1 s, then exactly 4 cards in a `radiogroup` named "Your goal", one per `goalType`, plus the "Something else" option. `[M]` (delayed mock)
-- [ ] AC-26 With the live model, a seeded `starterbakery.com` profile yields exactly 4 cards, one per `goalType`, with the model's most relevant first (default-filled cards allowed when the free model returns fewer; if it fails outright, the labeled fallback with 4 default cards); `business_profiles.suggested_goals`, `category`, `summary` are written and `goals_suggested` exists with `ms` and `filled`; every stored goal has `source`. `[L]`
+- [ ] AC-26 With the live model, a seeded `starterbakery.com` profile yields exactly 4 cards, one per `goalType`, with the model's most relevant first (default-filled cards allowed when the free model returns fewer; if it fails outright, the labeled fallback with 4 default cards); `business_profiles.suggested_goals` and `summary` are written and `goals_suggested` exists with `ms` and `filled`; every stored goal has `source`. `[L]`
 - [ ] AC-27 Refreshing on step 2 with saved suggestions renders the cards with **zero** `/api/goals/suggest` requests. `[M]` + `[L]` (event count unchanged)
 - [ ] AC-28 Selecting a card enables Continue; Continue sends `{ sessionId, kind:"suggested", goalType }` (no label), shows the end state, and the DB has `goal_type`, `goal_label` (the server's label), `status = 'building'`, and `goal_chosen`. `[M]` (request body) + `[L]` (DB)
 - [ ] AC-29 "Something else" reveals a labeled input; Continue is disabled for fewer than 3 trimmed characters; submitting stores `goal_custom_text`, `goal_type = null`, `goal_label = 'Custom goal'`. `[M]` + `[L]`

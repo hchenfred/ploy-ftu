@@ -93,6 +93,24 @@ Running log of decisions, places where I overrode the coding agent, and problems
   that succeeds (otherwise an inline alert, local state untouched). Known edge: if the user leaves while
   `researchSite` is still running on the server, the tool can still advance the status to `goal` after the back call.
 - `GoalStep` and `NextUpStep` are placeholders (with a working back link) until the next build steps.
+- **Removed `category` from the goals call (human's call).** Nothing reads `business_profiles.category` before the
+  Milestone 3 image prompt, and it was one more field the free model got wrong (it came back cut off mid-word:
+  "neighborhood bakery with two San Francis"). `suggestGoals` now writes only `summary` and `suggested_goals`;
+  every other reference (reads, clears, response shapes, the spec) is gone. The column stays in the table, unused.
+  Also noted: category was never set in step 1 because that would cost an extra model request per lookup on a
+  5 requests/min model (the step 1 reply is chat text and is not saved).
+
+### Deferred, to deal with later
+- **SPEC-M3 still builds its fal image prompt from `profile.category`.** That field is no longer filled. Decide in M3
+  where the image hint comes from: derive it from `summary`, have the page-composition call produce it, or add
+  `category` back to the goals call (with a short "2 to 4 words" description).
+- ~~Hard length limits on model-written text cut labels mid-phrase~~ **Fixed (human's call).** Live labels like
+  "...inquiries from cafes and" (54-55 chars, under the 60 limit) showed the model squeezes text to fit a schema
+  `max()`. Removed the `max()` from the model-facing schema (summary/label/reason), asked for "short, complete" text
+  in the field descriptions and `GOALS_PROMPT`, and enforce the limits on the server with `clip()` (word boundary,
+  never ends on a dangling and/for/to). Verified: unit tests for `clip` + 3 live calls on different businesses, 12
+  of 12 labels and reasons complete (30-43 chars). Deviates from the spec's original schema; SPEC-M2 updated.
+- **Goal-step quality on the free model is best effort**: expect default-filled goals and the fallback to appear.
 - (add yours here)
 
 ### Backend test results (2026-11-23, local, via curl; no UI yet)

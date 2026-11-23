@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     to = "site";
     const { error } = await db
       .from("business_profiles")
-      .update({ suggested_goals: null, category: null, summary: null })
+      .update({ suggested_goals: null, summary: null })
       .eq("session_id", sessionId);
     if (error) {
       console.error("[step/back] clearing profile failed:", error.message);

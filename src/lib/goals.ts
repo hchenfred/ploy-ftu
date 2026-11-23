@@ -49,18 +49,48 @@ export function defaultGoal(goalType: GoalType): SuggestedGoal {
 
 export const ALL_DEFAULT_GOALS: SuggestedGoal[] = GOAL_TYPES.map(defaultGoal);
 
+// Length limits for the saved text. They are enforced on the server by clip(), NOT in the schema below.
+// A hard maxLength in the schema sent to the model made it squeeze its text to fit and stop mid-phrase
+// ("...inquiries from cafes and"), and a Zod max() would reject the whole answer. Instead the field
+// descriptions and the prompt ask for short, complete text, and clip() is only a safety net.
+export const LIMITS = { summary: 200, label: 60, reason: 140 } as const;
+
+// Words that read as cut off when a sentence ends on them.
+const DANGLING = /\s+(and|or|but|for|to|of|with|from|the|a|an|in|on|at|by|as|your|their|our)$/i;
+
+/** Trim to at most `max` characters at a word boundary (never mid-word), without a dangling "and"/"for". */
+export function clip(text: string, max: number): string {
+  let t = text.trim().replace(/\s+/g, " ");
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  // Back up to the last space unless that would throw away most of the text.
+  t = lastSpace >= max * 0.5 ? cut.slice(0, lastSpace) : cut;
+  let prev: string;
+  do {
+    prev = t;
+    t = t.replace(/[\s,;:\-–—(]+$/, "").replace(DANGLING, "");
+  } while (t !== prev);
+  return t;
+}
+
 // The suggestGoals tool's input schema doubles as the structured output the model fills in.
 // The array is min(1), not min(4), on purpose: a partial answer from a weak model is rescued by
-// normalizeGoals instead of failing validation and discarding a good category and summary.
+// normalizeGoals instead of failing validation and discarding a good summary.
 export const suggestGoalsInput = z.object({
-  category: z.string().min(2).max(40).describe("Business category, e.g. 'neighborhood bakery'"),
-  summary: z.string().min(10).max(200).describe("One sentence: who they are and who they sell to"),
+  summary: z.string().min(10).describe("One short sentence: who they are and who they sell to"),
   goals: z
     .array(
       z.object({
         goalType: z.enum(GOAL_TYPES),
-        label: z.string().min(5).max(60),
-        reason: z.string().min(10).max(140).describe("Why this fits this business, one sentence"),
+        label: z
+          .string()
+          .min(5)
+          .describe("The outcome as a short, complete phrase of about 5 to 8 words, e.g. 'Fill your lunch rush with local customers'"),
+        reason: z
+          .string()
+          .min(10)
+          .describe("Why this fits this business: one short, complete sentence that names something specific about it"),
       }),
     )
     .min(1)
@@ -90,8 +120,8 @@ export function normalizeGoals(
 
   for (const g of modelGoals) {
     const type = GOAL_TYPES.find((t) => t === g.goalType);
-    const label = g.label?.trim();
-    const reason = g.reason?.trim();
+    const label = g.label ? clip(g.label, LIMITS.label) : "";
+    const reason = g.reason ? clip(g.reason, LIMITS.reason) : "";
     if (!type || !label || !reason || seen.has(type)) continue;
     seen.add(type);
     goals.push({ goalType: type, label, reason, source: "model" });
@@ -114,7 +144,6 @@ export type SessionState = {
   profile: null | {
     name: string | null;
     domain: string | null;
-    category: string | null;
     summary: string | null;
     brand: Partial<BrandProfile>; // {} for the describe path
     description: string | null; // content.description (describe path)
