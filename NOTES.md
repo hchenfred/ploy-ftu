@@ -31,6 +31,11 @@ Running log of decisions, places where I overrode the coding agent, and problems
   model, so watch whether `researchSite` is called correctly (and exactly once). Swap back to a paid model
   once credits are added; no code change needed. The free model is also capped at **5 requests/min** per team
   (one onboarding run is ~2), so test one request at a time, or the stream errors out with a 429.
+- **Rate-limit error is now explicit.** The SDK's default stream error is a generic "An error occurred."
+  `/api/chat` passes `onError` to `toUIMessageStream`: it logs the real error and, for a 429 (walking the
+  `AI_RetryError` cause chain), sends "Rate limit reached: the free-tier AI model allows only about 5 requests
+  per minute. Wait a minute, then retry." The SDK retries 3 times first, so a 429 often just shows up as a
+  slow (35-56 s) request, and the message only appears when retries are exhausted.
 - (add yours here)
 
 ### Backend test results (2026-11-23, local, via curl; no UI yet)
