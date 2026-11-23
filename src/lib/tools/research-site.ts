@@ -4,6 +4,7 @@ import { z } from "zod";
 import Firecrawl, { type BrandingProfile } from "@mendable/firecrawl-js";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { logEvent } from "@/lib/events";
+import { advanceStatus } from "@/lib/session-state";
 import { normalizeUrl } from "@/lib/url";
 
 const TIMEOUT_MS = 30_000;
@@ -83,6 +84,10 @@ export function researchSiteTool(sessionId: string) {
           brand,
           content: { digest: contentDigest },
           field_sources: { name: "scraped", brand: "scraped" },
+          // A fresh research starts the profile over: never keep an earlier site's goals.
+          category: null,
+          summary: null,
+          suggested_goals: null,
           updated_at: new Date().toISOString(),
         });
       if (error) console.error("[researchSite] failed to save profile:", error.message);
@@ -92,6 +97,9 @@ export function researchSiteTool(sessionId: string) {
         ms: Date.now() - started,
         domain: normalized.domain,
       });
+
+      // The server moves the session to the goal step; the UI re-reads the status when the user clicks Continue.
+      await advanceStatus(sessionId, "site", "goal");
 
       return { ok: true, domain: normalized.domain, brand, contentDigest };
     },

@@ -1,6 +1,7 @@
 // Shared goal types and helpers. No secrets and no "server-only": the client imports the types and
 // DEFAULT_GOALS from here, and server files (routes, tools) import the same definitions.
 import { z } from "zod";
+import type { BrandProfile } from "@/lib/tools/research-site"; // type-only: erased, never loads the server module
 
 export const SESSION_STATUSES = ["site", "goal", "building", "live"] as const;
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
@@ -105,3 +106,19 @@ export function normalizeGoals(
   }
   return { goals, filled };
 }
+
+// What GET /api/sessions/[id] returns: everything the UI needs to know which step to show.
+// Never contains the scraped page digest (the UI doesn't need it).
+export type SessionState = {
+  status: SessionStatus;
+  profile: null | {
+    name: string | null;
+    domain: string | null;
+    category: string | null;
+    summary: string | null;
+    brand: Partial<BrandProfile>; // {} for the describe path
+    description: string | null; // content.description (describe path)
+    suggestedGoals: SuggestedGoal[] | null;
+  };
+  goal: null | { goalType: GoalType | null; label: string; customText: string | null };
+};
