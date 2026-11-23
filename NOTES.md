@@ -43,6 +43,14 @@ Running log of decisions, places where I overrode the coding agent, and problems
   for `{ sessionId, error, retry }`. The chat sends it per call (`sendMessage(msg, { body: { sessionId } })`),
   so the transport is a plain module constant with no stale closure. Later steps (goals, page generation,
   publishing) reuse the same hook. Server side is unchanged: tools get the id from `buildTools(sessionId)`.
+- **Playwright over a manual checklist.** Two projects: `mocked` (intercepts `/api/chat` with a hand-built UI
+  message stream; 8 tests, ~8 s, no LLM calls) and `live` (real model + Firecrawl + Supabase, 30 s pause between
+  tests for the free model's 5 requests/min). `E2E_BASE_URL` points the same tests at the deployed URL.
+  The mocked suite also proved the per-call `{ body: { sessionId } }` reaches `/api/chat` (on submit and Retry).
+- **Caught by tests, not by me:** Next.js adds its own hidden `role="alert"` route announcer, so an unscoped
+  `getByRole("alert")` matched two elements; scoped it to the Conversation region.
+- **Transcript export:** `/export` can only be run by the user, so I generated a cleaned export of the Claude Code
+  session from its log (tool outputs dropped, secrets and email redacted, verified against `.env.local`).
 - (add yours here)
 
 ### Backend test results (2026-11-23, local, via curl; no UI yet)
@@ -60,3 +68,15 @@ Model: free `nvidia/nemotron-3.5-lightning-free`.
 | AC-13 | Partial | `localhost:3000` gave `invalid_url` + `tool_failed`; `ftp://` not tested yet |
 | AC-14 | Pass | "A bakery in Oakland..." got one sentence, no tool call |
 | Not tested | | AC-2/3/6 (UI, deploy), AC-4 (`assets` bucket not verified), AC-12, AC-15 |
+
+### UI + e2e test results (2026-11-23, local)
+- Mocked suite (`npm run test:e2e`): **8/8 pass**. Step 1 render, AC-5 (one session, reused on refresh),
+  AC-6/7/8 (Reading within 1 s, brand card, summary), failed-research fallback, AC-14 UI path, rate-limit
+  message + Retry, network failure + Retry, session failure + retry.
+- Live suite (`npm run test:e2e:live`): **6/6 pass** in 3.6 min. `starterbakery.com` end to end incl. Supabase
+  rows and events (AC-5..10), `cal.com` (AC-11), unreachable domain + `tool_failed` (AC-12), `localhost:3000`
+  and `ftp://` as `invalid_url` with no `research_done` (AC-13), no-website path (AC-14).
+- Still open: AC-15 (missing Firecrawl key), AC-2/3/4 (deploy, bundle secret scan, `assets` bucket), and
+  re-running the live suite against the Vercel URL.
+- Known gap: `ProgressSteps` is hardcoded to step 0 and `page.tsx` has no step state; the sessions `status`
+  column is the natural source once Milestone 2 adds the goal step.
