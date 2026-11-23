@@ -51,6 +51,32 @@ Running log of decisions, places where I overrode the coding agent, and problems
   `getByRole("alert")` matched two elements; scoped it to the Conversation region.
 - **Transcript export:** `/export` can only be run by the user, so I generated a cleaned export of the Claude Code
   session from its log (tool outputs dropped, secrets and email redacted, verified against `.env.local`).
+- **Added a "Use a different website" link (human's call).** After research there was no way back to step 1 short of
+  a refresh. Added a link that stops any in-flight request, clears the chat and returns to the form, keeping the same
+  session (a new lookup upserts over the saved profile). It is outside the M1 spec; asked first, then built.
+- **Finish and deploy Milestone 1 before starting Milestone 2 (human's call).** Rather than add a placeholder
+  "Continue" button that does nothing, M1 was closed out first: local checks, deploy, then the same tests on the
+  deployed URL.
+- **Milestone 2 spec delegated to a separate agent** with a self-contained brief (read-only except for `SPEC-M2.md`,
+  no servers or tests, unknowns go under "Open questions for the human"). It found real M1 gaps that M2 fixes:
+  the no-website description is never saved, researching a second site leaves stale goals, and `SessionProvider`
+  never checks that a stored session id still exists.
+- **Human overrode the agent's route names.** The M2 spec had `POST /api/goals` (generate suggestions) and
+  `POST /api/goal` (save the choice), one letter apart and easy to mix up. Renamed to `POST /api/goals/suggest`
+  and `POST /api/goals/choose`.
+- **Human overrode the number of suggested goals: at least 4, not 2-4.** There are exactly four goal types, so the
+  user always sees all four, one per type, most relevant first.
+- **Human approved filling missing goals from defaults.** If the free model returns fewer than 4 distinct types, the
+  server fills the gaps from `DEFAULT_GOALS` and tags those goals `source: "default"`, so there are always 4 cards.
+  This is why the tool's Zod schema is `min(1).max(4)` (not `min(4)`): a strict `min(4)` would fail validation on a
+  3-goal answer and throw away a good category and summary before the fill step could run. Only zero usable model
+  goals returns `invalid_output`. Default-filled cards look the same as model cards (agent's default, not yet
+  explicitly confirmed by the human).
+- **Going back stays a server call (`POST /api/step/back`); human agreed.** Considered a client-only back. Rejected
+  because the step lives in `sessions.status`, so a screen-only back would jump forward again on refresh, and because
+  going back must clean up: `building -> goal` clears the saved goal (keeps suggestions, so no new model call);
+  `goal -> site` also clears `category`, `summary` and `suggested_goals` so a new website never shows the old site's
+  goals. If the call fails, the screen is left alone so it never disagrees with the database. Cost: one round trip.
 - (add yours here)
 
 ### Backend test results (2026-11-23, local, via curl; no UI yet)
@@ -80,3 +106,19 @@ Model: free `nvidia/nemotron-3.5-lightning-free`.
   re-running the live suite against the Vercel URL.
 - Known gap: `ProgressSteps` is hardcoded to step 0 and `page.tsx` has no step state; the sessions `status`
   column is the natural source once Milestone 2 adds the goal step.
+
+### Milestone 1 on production (2026-11-23): https://ploy-ftu-pn3w.vercel.app
+- Live suite (`E2E_BASE_URL=... npm run test:e2e:live`): **6/6 pass** (3.6 min), same assertions as local. They read the
+  rows back from Supabase, so this also confirms Vercel uses the same Supabase project as `.env.local`.
+- Mocked suite against the deployed page: **9/9 pass**.
+- AC-2: `/` loads with **0 console errors** (headless Chrome).
+- AC-3: none of the 4 secret values appear in the 8 responses the browser loads on production (HTML, JS, JSON);
+  also none in the local `.next/static`; no `NEXT_PUBLIC_*` variables used.
+- AC-4: all 5 tables readable with the service role; `assets` bucket exists and is private. RLS-enabled is per the
+  migration, not independently verified (needs the anon key).
+- AC-15: ran a production build (`next start`, port 3100) with `FIRECRAWL_API_KEY=""`: tool returned
+  `{ ok:false, reason:"unknown" }`, no 500, `tool_failed` logged with "FIRECRAWL_API_KEY missing".
+  (A second `next dev` in the same directory is refused by Next.js, so I used `next start`.)
+- Manual testing on the deployed URL by the human: works as expected.
+- Status: all Milestone 1 acceptance criteria verified except AC-16 (explainability, for the human to answer live).
+
