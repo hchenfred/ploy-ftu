@@ -36,6 +36,13 @@ Running log of decisions, places where I overrode the coding agent, and problems
   `AI_RetryError` cause chain), sends "Rate limit reached: the free-tier AI model allows only about 5 requests
   per minute. Wait a minute, then retry." The SDK retries 3 times first, so a 429 often just shows up as a
   slow (35-56 s) request, and the message only appears when retries are exhausted.
+- **Session id lives in a React context, not a module variable.** My first `page.tsx` kept the id in
+  `useState` plus a module-level `currentSessionId` that the chat transport read (a workaround for the
+  `react-hooks/refs` lint rule). Overrode that: `SessionProvider` (`components/session-provider.tsx`, mounted in
+  `layout.tsx`) owns the localStorage/`POST /api/sessions` logic, and any client component calls `useSession()`
+  for `{ sessionId, error, retry }`. The chat sends it per call (`sendMessage(msg, { body: { sessionId } })`),
+  so the transport is a plain module constant with no stale closure. Later steps (goals, page generation,
+  publishing) reuse the same hook. Server side is unchanged: tools get the id from `buildTools(sessionId)`.
 - (add yours here)
 
 ### Backend test results (2026-11-23, local, via curl; no UI yet)
