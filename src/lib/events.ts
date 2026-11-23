@@ -3,7 +3,15 @@ import { supabaseAdmin } from "@/lib/supabase-server";
 
 // Funnel events. Written by server code (routes and tool execute functions),
 // never by the LLM, so the numbers on /metrics can be trusted.
-export type EventName = "ftu_started" | "research_done" | "tool_failed";
+export type EventName =
+  | "ftu_started"
+  | "research_done"
+  | "tool_failed"
+  | "step_changed"
+  | "description_saved"
+  | "goals_suggested"
+  | "goal_chosen"
+  | "step_back";
 
 export async function logEvent(
   sessionId: string | null,
