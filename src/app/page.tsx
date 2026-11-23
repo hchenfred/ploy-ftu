@@ -35,10 +35,22 @@ export default function Home() {
   // Set on URL submit so "Reading {domain}…" shows before the tool part streams in.
   const [pendingDomain, setPendingDomain] = useState<string | null>(null);
 
-  const { messages, sendMessage, status, error, regenerate } = useChat<FtuUIMessage>({ transport });
+  const { messages, sendMessage, status, error, regenerate, stop, clearError, setMessages } =
+    useChat<FtuUIMessage>({ transport });
 
   const busy = status === "submitted" || status === "streaming";
   const canSubmit = !!sessionId && !busy;
+
+  // Back to the empty form. Keeps the same session: researching a new site upserts over the saved profile.
+  function startOver() {
+    stop(); // abort any in-flight request first
+    clearError();
+    setMessages([]);
+    setNoWebsite(false);
+    setPendingDomain(null);
+    setUrl("");
+    setDescription("");
+  }
 
   function submitUrl(e: FormEvent) {
     e.preventDefault();
@@ -176,6 +188,14 @@ export default function Home() {
               disabled={!canSubmit}
             />
           )}
+
+          <button
+            type="button"
+            onClick={startOver}
+            className="self-start rounded text-sm underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Use a different website
+          </button>
         </section>
       )}
     </main>

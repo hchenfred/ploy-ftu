@@ -129,3 +129,29 @@ test("session failure shows a retry instead of a dead form", async ({ page }) =>
   await expect(page.getByLabel("Website URL")).toBeEnabled();
   await expect.poll(() => sessionIdOf(page)).toMatch(UUID);
 });
+
+test("'Use a different website' returns to the form and keeps the same session", async ({ page }) => {
+  const requests = await mockChat(page, [streams.brandOk(), streams.brandOk("cal.com")]);
+  await page.goto("/");
+  await expect.poll(() => sessionIdOf(page)).toMatch(UUID);
+  await expect(page.getByLabel("Website URL")).toBeEnabled();
+  const id = await sessionIdOf(page);
+
+  await page.getByLabel("Website URL").fill("starterbakery.com");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("region", { name: "Brand for Starter Bakery" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Use a different website" }).click();
+  await expect(page.getByRole("heading", { name: "What’s your website?" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Conversation" })).toHaveCount(0);
+  await expect(page.getByLabel("Website URL")).toHaveValue("");
+
+  // A second lookup works, with the same session id.
+  await page.getByLabel("Website URL").fill("cal.com");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("region", { name: /^Brand for / })).toBeVisible();
+  expect(await sessionIdOf(page)).toBe(id);
+  expect(requests).toHaveLength(2);
+  expect(requests[1].sessionId).toBe(id);
+  expect(JSON.stringify(requests[1].messages)).not.toContain("starterbakery"); // old conversation was cleared
+});
