@@ -24,4 +24,27 @@ Running log of decisions, places where I overrode the coding agent, and problems
 - npm registry is blocked in the agent's sandbox, so I ran installs in my own Terminal.
 
 ### Overrides / things I figured out
+- **Supabase grants:** `permission denied for table sessions` even with the service key. Tables made via the
+  SQL editor had no `service_role` privileges (it bypasses RLS, not GRANTs). Added grants to `0001_init.sql`.
+- **AI Gateway needs a card on file, and the free tier can't use `anthropic/claude-sonnet-5.5`.** Switched
+  `MODEL_ID` to the free `nvidia/nemotron-3.5-lightning-free`. Caveat: tool-calling reliability varies by
+  model, so watch whether `researchSite` is called correctly (and exactly once). Swap back to a paid model
+  once credits are added; no code change needed. The free model is also capped at **5 requests/min** per team
+  (one onboarding run is ~2), so test one request at a time, or the stream errors out with a 429.
 - (add yours here)
+
+### Backend test results (2026-11-23, local, via curl; no UI yet)
+Model: free `nvidia/nemotron-3.5-lightning-free`.
+
+| AC | Result | Notes |
+| --- | --- | --- |
+| AC-1 | Pass | `npm run lint` and `npm run build`: zero errors |
+| AC-5 | Partial | Session row and `ftu_started` event created; reuse-on-refresh needs the UI |
+| AC-7 | Partial | `starterbakery.com` returned name, 4 colors, fonts, logo in ~5 s; the card needs the UI |
+| AC-8 | Pass | One-sentence summary streams after the tool result |
+| AC-9 | Pass | `business_profiles` row has `url`, `brand`, `field_sources` |
+| AC-10 | Pass | `research_done` has `ok: true` and `ms` |
+| AC-11 | Partial | `cal.com` returned a brand and summary; the card needs the UI |
+| AC-13 | Partial | `localhost:3000` gave `invalid_url` + `tool_failed`; `ftp://` not tested yet |
+| AC-14 | Pass | "A bakery in Oakland..." got one sentence, no tool call |
+| Not tested | | AC-2/3/6 (UI, deploy), AC-4 (`assets` bucket not verified), AC-12, AC-15 |

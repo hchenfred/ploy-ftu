@@ -73,3 +73,11 @@ alter table events            enable row level security;
 insert into storage.buckets (id, name, public)
 values ('assets', 'assets', false)
 on conflict (id) do nothing;
+
+-- Server-only access: the service role needs explicit table privileges
+-- (it bypasses RLS, but not GRANTs). anon/authenticated get nothing.
+grant usage on schema public to service_role;
+grant all on all tables in schema public to service_role;
+grant all on all sequences in schema public to service_role;
+alter default privileges in schema public grant all on tables to service_role;
+alter default privileges in schema public grant all on sequences to service_role;
