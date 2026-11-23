@@ -77,6 +77,11 @@ Running log of decisions, places where I overrode the coding agent, and problems
   going back must clean up: `building -> goal` clears the saved goal (keeps suggestions, so no new model call);
   `goal -> site` also clears `category`, `summary` and `suggested_goals` so a new website never shows the old site's
   goals. If the call fails, the screen is left alone so it never disagrees with the database. Cost: one round trip.
+- **Describing a business replaces the whole profile row; human confirmed wiping old brand data.** The planned
+  `POST /api/profile/describe` (saves the one-sentence description from the no-website path, which M1 never
+  persisted) overwrites `business_profiles` for the session: `url`, `name` and `brand` emptied, `content` becomes
+  `{ description }`, `field_sources: { description: "user" }`, and `category`/`summary`/`suggested_goals` cleared. So
+  a user who researched a site, went back and described a business instead never keeps the old site's brand.
 - (add yours here)
 
 ### Backend test results (2026-11-23, local, via curl; no UI yet)
