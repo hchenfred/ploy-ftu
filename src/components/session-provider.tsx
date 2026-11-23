@@ -39,6 +39,8 @@ type SessionContextValue = {
   sessionId: string | null;
   error: boolean;
   retry: () => void;
+  /** Forget the stored id and start a fresh session (used when the server no longer knows the stored one). */
+  resetSession: () => void;
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -66,7 +68,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .catch(() => setError(true));
   }, []);
 
-  const value = useMemo(() => ({ sessionId, error, retry }), [sessionId, error, retry]);
+  const resetSession = useCallback(() => {
+    try {
+      localStorage.removeItem(SESSION_KEY);
+    } catch {
+      // storage blocked: a new session is created below anyway
+    }
+    sessionPromise = null;
+    ensureSession()
+      .then(setSessionId)
+      .catch(() => setError(true));
+  }, []);
+
+  const value = useMemo(
+    () => ({ sessionId, error, retry, resetSession }),
+    [sessionId, error, retry, resetSession],
+  );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

@@ -82,6 +82,17 @@ Running log of decisions, places where I overrode the coding agent, and problems
   persisted) overwrites `business_profiles` for the session: `url`, `name` and `brand` emptied, `content` becomes
   `{ description }`, `field_sources: { description: "user" }`, and `category`/`summary`/`suggested_goals` cleared. So
   a user who researched a site, went back and described a business instead never keeps the old site's brand.
+- **M2 step 3 (page split): Continue button, not auto-advance.** `researchSite` moves the server status to `goal`
+  before the user has read the brand card, so the shell never switches steps on its own: `SiteStep` shows
+  **Continue** once the chat turn is done and the server has what it needs (research ok, or the description saved),
+  and Continue just asks the shell to re-read `sessions.status`.
+- **Caught while testing step 3:** in the no-website path the description box stayed on screen after submitting, so
+  there were two "Continue" buttons (the box's own submit and the real one) and my test's wait returned early.
+  Fixed by hiding the box once the description is saved.
+- **"Use a different website" is now server-first:** it calls `POST /api/step/back`, and only resets the screen if
+  that succeeds (otherwise an inline alert, local state untouched). Known edge: if the user leaves while
+  `researchSite` is still running on the server, the tool can still advance the status to `goal` after the back call.
+- `GoalStep` and `NextUpStep` are placeholders (with a working back link) until the next build steps.
 - (add yours here)
 
 ### Backend test results (2026-11-23, local, via curl; no UI yet)
