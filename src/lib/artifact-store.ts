@@ -38,7 +38,7 @@ export async function getArtifact(sessionId: string): Promise<ArtifactRow | null
 }
 
 export type ClaimResult =
-  | { ok: true; id: string; generations: number; claimedAt: string }
+  | { ok: true; id: string; generations: number; claimedAt: string; previousImagePaths: string[] }
   | { ok: false; reason: "limit" | "busy" | "saved" | "error" };
 
 /**
@@ -63,7 +63,7 @@ export async function claimGeneration(sessionId: string, goalType: GoalType, typ
         .select("id")
         .single();
       if (error) return { ok: false, reason: error.code === "23505" ? "busy" : "error" }; // unique violation: another request won
-      return { ok: true, id: data.id, generations: 1, claimedAt };
+      return { ok: true, id: data.id, generations: 1, claimedAt, previousImagePaths: [] };
     }
 
     if (existing.saved_at) return { ok: false, reason: "saved" };
@@ -87,7 +87,7 @@ export async function claimGeneration(sessionId: string, goalType: GoalType, typ
     const { data, error } = await q.select("id");
     if (error) return { ok: false, reason: "error" };
     if (!data || data.length === 0) return { ok: false, reason: "busy" };
-    return { ok: true, id: existing.id, generations: previous + 1, claimedAt };
+    return { ok: true, id: existing.id, generations: previous + 1, claimedAt, previousImagePaths: existing.image_paths ?? [] };
   } catch (err) {
     console.error("[artifact-store] claim failed:", err);
     return { ok: false, reason: "error" };
@@ -107,6 +107,8 @@ export async function finishGeneration(args: {
   content: unknown;
   source: ArtifactSource;
   reason: string | null;
+  /** Stored files for this artifact (the generated ad image); replaces the previous list. */
+  imagePaths?: string[];
 }): Promise<boolean> {
   const db = supabaseAdmin();
   try {
@@ -119,6 +121,7 @@ export async function finishGeneration(args: {
           meta: { generations: args.generations, claimedAt: null, source: args.source, reason: args.reason },
           content: args.content,
         },
+        image_paths: args.imagePaths ?? [],
       })
       .eq("id", args.id)
       .eq("data->meta->>claimedAt", args.claimedAt)
@@ -137,7 +140,7 @@ export async function finishGeneration(args: {
 /** What the page, playbook and ad builders need about the business, read from what step 1 saved. */
 export async function loadArtifactInput(
   sessionId: string,
-): Promise<{ profile: ArtifactProfile; prompt: ArtifactPromptInput } | null> {
+): Promise<{ profile: ArtifactProfile; prompt: ArtifactPromptInput; photoPath: string | null } | null> {
   const { data, error } = await supabaseAdmin()
     .from("business_profiles")
     .select("url, name, summary, brand, content")
@@ -151,9 +154,10 @@ export async function loadArtifactInput(
   } catch {
     domain = null;
   }
-  const content = (data.content ?? {}) as { digest?: string; description?: string };
+  const content = (data.content ?? {}) as { digest?: string; description?: string; photo?: { path?: string } };
   const brand = (data.brand ?? {}) as { name?: string | null; logoUrl?: string | null; colors?: string[] };
   return {
+    photoPath: typeof content.photo?.path === "string" ? content.photo.path : null,
     profile: {
       name: data.name ?? null,
       domain,

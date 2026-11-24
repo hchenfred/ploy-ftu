@@ -493,3 +493,40 @@ Two things to know about this model, both seen in real runs on 2026-11-23, plus 
 - **Swapping the model is only `MODEL_ID`**, but re-check three things after a swap: does the answer follow the schema,
   does it stream (a check that counts chunks: the script that showed "1 chunk" is the one to rerun), and the latency.
 
+## Milestone 3, step 5 (photo upload and the fal ad) built (2026-11-23)
+### fal.ai: the first real call (the human added credit; the first attempt had been refused for balance)
+- **Before credit:** fal answered **403** `{"detail":"User is locked. Reason: Exhausted balance. Top up your balance at fal.ai/dashboard/billing."}`:
+  proof the key and the `Authorization: Key ...` header format were right (a wrong key is 401), and the real error shape. It maps to
+  the reason `billing`.
+- **With credit:** `google/nano-banana-2.1/edit` via the queue worked on the first try. Submit: 200 `{status: "IN_QUEUE", request_id, response_url, status_url, cancel_url, ...}`.
+  Polling: **HTTP 202 `IN_PROGRESS` while running, 200 `COMPLETED` when done** (so any 2xx is fine; read the `status` field). Result:
+  `images[0] = {url, content_type: "image/jpeg", file_name, file_size: null, width: 1024, height: 1024}`; the output host was
+  `v3b.fal.media` with `cache-control: public, max-age=5184000, immutable` (60 days). **Latency 17.6 s, 21.3 s, 21.8 s** per image
+  (plus about 1 s each to sign and copy). `file_size` is null, so never rely on it.
+- **fal accepted our Supabase signed URL as the reference image** (a 10-minute signed link to the private bucket).
+- **Headline text:** "Fresh bread daily" and "Baked at dawn" were both spelled correctly and cleanly rendered; the second used the brand-blue
+  accent from the prompt as the backdrop and kept the test photo's bread unchanged. **Only 2 results, on a test photo (the first on a
+  random landscape, the second on an earlier output), not a real product: the spec's "5 or more runs on real products" check is still open.**
+  Price per image: not measured (check the fal dashboard).
+### What was built
+- `src/lib/artifact/fal-client.ts` (pure: config in, never reads env; queue submit, poll, result; typed failure reasons; follows only
+  URLs on the API's own origin; scrubs the key from errors), `src/lib/fal.ts` (server-only: config from env, guarded download of the
+  output), `src/lib/artifact-storage.ts` (private `assets` bucket: upload, signed URL, remove), `POST /api/uploads/photo`, the ad branch of
+  `POST /api/artifact/generate`, `SessionState.photo` and a signed `imageUrl` for the generated image, the `photo_uploaded` event.
+- **Flow:** the photo is checked by its bytes and stored privately; fal gets a 10-minute signed URL of our copy; the output is
+  downloaded (https and public host only, 15 s, 8 MB cap, type sniffed), **copied into our bucket**, and only our path is stored (no
+  fal URL anywhere); the previous output is deleted when replaced. Any failure leaves a saved text-only card with the reason.
+- **Fixed in this step:** the ad answer used to claim success even when nothing was stored (the user had gone back); it now
+  answers 409 `wrong_step` and removes the file it copied.
+### Tests
+- Unit **44/44** (9 new for the fal client against a stub server, including the real 403 message, every error mapping, other-host
+  URLs never followed, deadline, unreachable server, and the key never in an error). Live spec **10/10**: guards, the card, the cap,
+  saved, parallel claim, hidden stale draft, upload refusals (text file named .jpg, GIF, SVG, empty, 5 MB, wrong goal, wrong step),
+  type-decides-name and replacement, one real fal call, two real model calls. Mocked **50/50**, lint, types and the production build clean.
+- Checked through the real route with `next start` and environment overrides (not kept as repo tests, they need a stub server on a
+  fixed port): fal 403 billing, 429, an output URL that is http or private (refused), and no `FAL_KEY`: each saves the branded card
+  with the reason, logs `tool_failed { tool: "fal" }`, and the key never appears in events.
+### Still open
+- Price per image; concurrency limit; the 5-run headline and product-fidelity check on real product photos; cleanup of stored
+  files on `step/back` (step 6); the browser-side downsizing and the upload UI (step 6, `BuildStep`).
+

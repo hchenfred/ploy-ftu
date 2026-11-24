@@ -204,6 +204,8 @@ export type SessionState = {
     suggestedGoals: SuggestedGoal[] | null;
   };
   goal: null | { goalType: GoalType; label: string };
+  // The product photo the user uploaded for the ad (null if none). Never the path or a URL: the UI only needs to know it exists.
+  photo: null | { bytes: number };
   // The draft or saved artifact for the chosen goal (null until the first generation). Never includes the digest.
   artifact: null | {
     id: string;

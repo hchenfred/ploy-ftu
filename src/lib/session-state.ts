@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { logEvent } from "@/lib/events";
 import { getArtifact } from "@/lib/artifact-store";
+import { signedAssetUrl } from "@/lib/artifact-storage";
 import type { SessionState, SessionStatus, SuggestedGoal } from "@/lib/goals";
 
 /**
@@ -76,7 +77,7 @@ export async function loadSessionState(sessionId: string): Promise<LoadResult> {
             source: row.data.meta?.source ?? "fallback",
             reason: row.data.meta?.reason ?? null,
             content: row.data.content as NonNullable<SessionState["artifact"]>["content"],
-            imageUrl: null, // signed URLs for generated images arrive with the fal step
+            imageUrl: row.data.meta?.source === "fal" && row.image_paths?.[0] ? await signedAssetUrl(row.image_paths[0], 3600) : null,
             saved: !!row.saved_at,
             generations: row.data.meta?.generations ?? 0,
           }
@@ -97,6 +98,9 @@ export async function loadSessionState(sessionId: string): Promise<LoadResult> {
             }
           : null,
         goal,
+        photo: typeof (profile?.content as { photo?: { bytes?: number } } | null)?.photo?.bytes === "number"
+          ? { bytes: (profile!.content as { photo: { bytes: number } }).photo.bytes }
+          : null,
         artifact,
       },
     };

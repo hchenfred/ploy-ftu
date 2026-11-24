@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { db, dbWrite, seedSession, STARTER_PROFILE } from "./helpers";
+import { assetStatus, db, dbWrite, fakeJpeg, makePng, seedSession, STARTER_PROFILE } from "./helpers";
 
 // Milestone 3 step 4: POST /api/artifact/generate against the real routes and database. The first group spends no model
 // request (guards, the text-only card, the cap of 3, the claim, saved artifacts). The last two tests each spend one model
-// request and pause 30 s afterwards (the free model allows about 5 requests a minute).
+// request and pause 30 s afterwards (the free model allows about 5 requests a minute). Tests tagged "fal" make one real fal call
+// (a few cents) and accept either a generated image or the labeled text-only card, so they pass without credit too.
 test.afterEach(async ({}, testInfo) => {
   if (testInfo.annotations.some((a) => a.type === "llm")) await new Promise((r) => setTimeout(r, 30_000));
 });
@@ -29,7 +30,7 @@ test("launch_product saves the text-only card with the user's headline, the bran
   const id = await seedSession(page, { ...building(LAUNCH) });
   const res = await request.post("/api/artifact/generate", { data: { sessionId: id, headline: "  Fresh   bread daily " } });
   expect(res.status()).toBe(200);
-  expect(await res.json()).toEqual({ ok: true, source: "card" });
+  expect(await res.json()).toEqual({ ok: true, source: "card", reason: null }); // no photo: a plain card, nothing failed
 
   const state = (await (await request.get(`/api/sessions/${id}`)).json()) as State;
   expect(state.artifact).toMatchObject({ type: "ad_creative", source: "card", reason: null, saved: false, generations: 1 });
@@ -82,6 +83,89 @@ test("a leftover draft for a different goal is hidden from the state", async ({ 
   await request.post("/api/artifact/generate", { data: { sessionId: id } });
   await dbWrite("PATCH", `sessions?id=eq.${id}`, { goal_type: "get_leads", goal_label: "Get leads for my service" });
   expect(((await (await request.get(`/api/sessions/${id}`)).json()) as State).artifact).toBeNull();
+});
+
+// ---------- the product photo upload and the fal ad ----------
+const upload = (request: import("@playwright/test").APIRequestContext, sessionId: string, file: { name: string; mimeType: string; buffer: Buffer } | null, fields: Record<string, string> = { sessionId }) =>
+  request.post("/api/uploads/photo", { multipart: file ? { ...fields, file } : fields });
+
+test("photo upload: wrong files and wrong steps are refused and nothing is stored", async ({ page, request }) => {
+  const id = await seedSession(page, { ...building(LAUNCH) });
+  expect((await upload(request, id, null)).status()).toBe(400);
+  expect((await upload(request, id, { name: "a.jpg", mimeType: "image/jpeg", buffer: fakeJpeg() }, { sessionId: "nope" })).status()).toBe(400);
+  for (const [name, mimeType, buffer] of [
+    ["photo.jpg", "image/jpeg", Buffer.from("this is plain text, not an image ".repeat(30))], // the name and type lie
+    ["a.gif", "image/gif", Buffer.concat([Buffer.from("GIF89a"), Buffer.alloc(200)])],
+    ["a.svg", "image/svg+xml", Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'.repeat(10))],
+    ["empty.jpg", "image/jpeg", Buffer.alloc(0)],
+  ] as const) {
+    const res = await upload(request, id, { name, mimeType, buffer });
+    expect(res.status(), name).toBe(400);
+    expect(await res.json()).toEqual({ error: "unsupported_type" });
+  }
+  const tooBig = await upload(request, id, { name: "big.jpg", mimeType: "image/jpeg", buffer: Buffer.concat([fakeJpeg(), Buffer.alloc(5 * 1024 * 1024)]) });
+  expect(tooBig.status()).toBe(413);
+  expect(await tooBig.json()).toEqual({ error: "too_large" });
+
+  const leads = await seedSession(page, { ...building({ goal_type: "get_leads", goal_label: "Get leads for my service" }) });
+  expect((await upload(request, leads, { name: "a.jpg", mimeType: "image/jpeg", buffer: fakeJpeg() })).status()).toBe(409); // only the ad takes a photo
+  const early = await seedSession(page, { status: "goal", profile: PROFILE });
+  expect((await upload(request, early, { name: "a.jpg", mimeType: "image/jpeg", buffer: fakeJpeg() })).status()).toBe(409);
+  expect(((await (await request.get(`/api/sessions/${id}`)).json()) as { photo: unknown }).photo).toBeNull();
+});
+
+test("photo upload: the real type decides the name; a new photo replaces the old file; only the size is exposed", async ({ page, request }) => {
+  const id = await seedSession(page, { ...building(LAUNCH) });
+  const jpeg = fakeJpeg();
+  const first = await upload(request, id, { name: "photo.jpg", mimeType: "image/jpeg", buffer: jpeg });
+  expect(first.status()).toBe(200);
+  expect(await first.json()).toEqual({ ok: true, bytes: jpeg.length });
+  expect(await assetStatus(`${id}/ad/reference.jpg`)).toBe(200);
+  const state = (await (await request.get(`/api/sessions/${id}`)).json()) as { photo: unknown };
+  expect(state.photo).toEqual({ bytes: jpeg.length });
+  expect(JSON.stringify(state)).not.toContain("assets");
+  const profile = await db<{ content: { photo: { path: string }; digest?: string } }>("business_profiles", `session_id=eq.${id}&select=content`);
+  expect(profile[0].content.photo.path).toBe(`${id}/ad/reference.jpg`);
+  expect(profile[0].content.digest).toBeTruthy(); // the scraped text was kept
+  const ev = await db<{ name: string; props: Record<string, unknown> }>("events", `session_id=eq.${id}&select=name,props&order=id`);
+  expect(ev.find((e) => e.name === "photo_uploaded")?.props).toEqual({ bytes: jpeg.length, type: "jpeg" });
+
+  // a PNG that is named .jpg is stored as .png, and the old JPEG file is removed
+  const png = makePng(64);
+  expect((await upload(request, id, { name: "really.jpg", mimeType: "image/jpeg", buffer: png })).status()).toBe(200);
+  expect(await assetStatus(`${id}/ad/reference.png`)).toBe(200);
+  expect(await assetStatus(`${id}/ad/reference.jpg`)).not.toBe(200);
+});
+
+test("ad with a photo: fal makes the image, we copy it into our storage (or the labeled card if fal cannot)", async ({ page, request }) => {
+  test.info().annotations.push({ type: "fal", description: "1 real fal call (a few cents)" });
+  const id = await seedSession(page, { ...building(LAUNCH) });
+  expect((await upload(request, id, { name: "product.png", mimeType: "image/png", buffer: makePng(256) })).status()).toBe(200);
+  const res = await request.post("/api/artifact/generate", { data: { sessionId: id, headline: "Fresh bread daily" }, timeout: 70_000 });
+  expect(res.status()).toBe(200);
+  const body = (await res.json()) as { ok: boolean; source: string; reason?: string | null };
+  const state = (await (await request.get(`/api/sessions/${id}`)).json()) as State & { artifact: { imageUrl: string | null } };
+  test.info().annotations.push({ type: "result", description: `${body.source} ${body.reason ?? ""}` });
+  expect(state.artifact).toMatchObject({ type: "ad_creative", saved: false, generations: 1 });
+  expect(state.artifact!.content.headline).toBe("Fresh bread daily");
+  expect(JSON.stringify(state)).not.toContain("fal.media"); // a fal URL is never stored or shown
+
+  const rows = await db<{ image_paths: string[] }>("artifacts", `session_id=eq.${id}&select=image_paths`);
+  const ev = await db<{ name: string; props: Record<string, unknown> }>("events", `session_id=eq.${id}&select=name,props&order=id`);
+  if (body.source === "fal") {
+    expect(rows[0].image_paths).toEqual([`${id}/ad/output-1.jpg`]);
+    expect(await assetStatus(`${id}/ad/output-1.jpg`)).toBe(200); // copied into our private bucket
+    expect(state.artifact!.imageUrl).toContain("supabase"); // a signed URL of OUR storage
+    const img = await fetch(state.artifact!.imageUrl!);
+    expect(img.headers.get("content-type")).toBe("image/jpeg");
+    expect(ev.some((e) => e.name === "tool_failed")).toBe(false);
+  } else {
+    expect(body.source).toBe("card"); // fal could not make it: a branded card is saved, with the reason
+    expect(body.reason).toBeTruthy();
+    expect(rows[0].image_paths).toEqual([]);
+    expect(state.artifact!.imageUrl).toBeNull();
+    expect(ev.find((e) => e.name === "tool_failed")?.props).toMatchObject({ tool: "fal", reason: body.reason });
+  }
 });
 
 // ---------- model tests: one request each ----------

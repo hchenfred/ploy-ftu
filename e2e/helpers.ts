@@ -1,3 +1,4 @@
+import { crc32, deflateSync } from "node:zlib";
 import type { Page } from "@playwright/test";
 import { DEFAULT_GOALS } from "../src/lib/goals";
 import type { GoalType, SessionState, SuggestedGoal, SuggestGoalsResponse } from "../src/lib/goals";
@@ -151,6 +152,7 @@ export async function fakeBackend(page: Page, init: FakeInit = {}) {
       suggestedGoals: init.suggestedGoals === undefined ? null : init.suggestedGoals,
     },
     goal: init.goal ?? null,
+    photo: null,
     artifact: null,
   };
   const log = { getState: 0, suggest: 0, choose: [] as Record<string, unknown>[], back: 0, describe: [] as Record<string, unknown>[] };
@@ -274,3 +276,51 @@ export const STARTER_PROFILE = {
       "Starter Bakery. Fresh sourdough, pastries and coffee baked every morning in San Francisco. Shops in the Mission and the Marina. Catering and wholesale for cafes and offices. Order online for pickup. Open daily 7am to 6pm.",
   },
 };
+
+// --- Milestone 3 step 5: photo upload fixtures ---------------------------------------------------------------------
+
+
+/** A valid PNG of a simple gradient, size x size pixels (a real image fal can take, no files needed). */
+export function makePng(size = 256): Buffer {
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(Buffer.concat([Buffer.from(type), data])));
+    return Buffer.concat([len, Buffer.from(type), data, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB
+  const rows: Buffer[] = [];
+  for (let y = 0; y < size; y++) {
+    const row = Buffer.alloc(1 + size * 3);
+    for (let x = 0; x < size; x++) row.set([(x * 255) / size, (y * 255) / size, 160], 1 + x * 3);
+    rows.push(row);
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(Buffer.concat(rows))),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+/** JPEG magic bytes with filler: enough to pass the type check (it is not a displayable picture). */
+export const fakeJpeg = (bytes = 2_000) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(bytes, 7)]);
+
+/** 200 if the stored file exists in the private bucket (checked through a signed URL), else the failing status. */
+export async function assetStatus(path: string): Promise<number> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const sign = await fetch(`${url}/storage/v1/object/sign/assets/${path}`, {
+    method: "POST",
+    headers: { apikey: key!, Authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({ expiresIn: 60 }),
+  });
+  if (!sign.ok) return sign.status;
+  const { signedURL } = (await sign.json()) as { signedURL: string };
+  return (await fetch(`${url}/storage/v1${signedURL}`)).status;
+}

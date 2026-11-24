@@ -1,13 +1,16 @@
 import { createTextStreamResponse, Output, streamText, toTextStream } from "ai";
 import { z } from "zod";
 import { isRateLimitError, isTimeoutError } from "@/lib/ai-errors";
-import { buildAdHeadline, type AdCreative } from "@/lib/artifact/ad";
+import { buildAdHeadline, buildImagePrompt, imageContentType, imageExtension, type AdCreative } from "@/lib/artifact/ad";
+import { generateAdImage } from "@/lib/artifact/fal-client";
 import { fallbackPage, pageModelSchema, validatePage } from "@/lib/artifact/page";
 import { fallbackPlaybook, playbookModelSchema, validatePlaybook } from "@/lib/artifact/playbook";
 import { buildArtifactInput } from "@/lib/artifact/prompt";
 import { deriveTheme } from "@/lib/artifact/theme";
 import { extractJson } from "@/lib/artifact/types";
+import { removeAssets, signedAssetUrl, uploadAsset } from "@/lib/artifact-storage";
 import { claimGeneration, finishGeneration, loadArtifactInput, type ArtifactSource } from "@/lib/artifact-store";
+import { downloadGeneratedImage, falConfig } from "@/lib/fal";
 import { logEvent } from "@/lib/events";
 import { GOAL_CATALOG } from "@/lib/goals";
 import { PAGE_PROMPT, PLAYBOOK_PROMPT } from "@/lib/prompts";
@@ -52,7 +55,15 @@ export async function POST(req: Request) {
 
   const started = Date.now();
   const input = await loadArtifactInput(sessionId).catch(() => null);
-  const done = async (content: unknown, source: ArtifactSource, reason: string | null, detail?: string) => {
+  // Save the result and log it. Returns whether it was saved (false when the user went back or the claim was replaced).
+  const done = async (
+    content: unknown,
+    source: ArtifactSource,
+    reason: string | null,
+    detail?: string,
+    imagePaths?: string[],
+    tool = "generateArtifact",
+  ): Promise<boolean> => {
     const saved = await finishGeneration({
       sessionId,
       id: claim.id,
@@ -61,6 +72,7 @@ export async function POST(req: Request) {
       content,
       source,
       reason,
+      imagePaths,
     });
     await logEvent(sessionId, "artifact_generated", {
       goalType: goal.goalType,
@@ -71,23 +83,70 @@ export async function POST(req: Request) {
       saved,
     });
     if (reason) {
-      await logEvent(sessionId, "tool_failed", { tool: "generateArtifact", reason, detail, goalType: goal.goalType });
+      await logEvent(sessionId, "tool_failed", { tool, reason, detail, goalType: goal.goalType });
     }
+    return saved;
   };
 
   // No usable profile (should not happen after step 1): save a neutral fallback so the user is never stuck.
   const profile = input?.profile ?? { name: null, domain: null, summary: null, description: null, brand: {} };
 
-  // ---- launch_product: the text-only branded card (no model request) ----
+  // ---- launch_product: the ad. With an uploaded photo and a fal key, fal makes the image (no model request); in every other case,
+  // or if anything about fal fails, the text-only branded card is saved. ----
   if (artifactType === "ad_creative") {
-    const card: AdCreative = {
-      kind: "ad_creative",
-      source: "card",
-      headline: buildAdHeadline(headline, profile.name ?? profile.brand.name ?? profile.domain),
-      accent: deriveTheme(profile.brand.colors).accent,
-    };
-    await done(card, "card", null);
-    return Response.json({ ok: true, source: "card" });
+    const adHeadline = buildAdHeadline(headline, profile.name ?? profile.brand.name ?? profile.domain);
+    const accent = deriveTheme(profile.brand.colors).accent;
+    const card: AdCreative = { kind: "ad_creative", source: "card", headline: adHeadline, accent };
+    const cfg = falConfig();
+    const photoPath = input?.photoPath ?? null;
+    let reason: string | null = null; // why we fell back to the card (null when the user simply skipped the photo)
+    let detail: string | undefined;
+
+    if (photoPath && !cfg) {
+      reason = "not_configured";
+    } else if (photoPath && cfg) {
+      const referenceUrl = await signedAssetUrl(photoPath, 600); // fal gets a short-lived link to OUR copy, never a public file
+      if (!referenceUrl) {
+        reason = "unavailable";
+        detail = "could not sign the photo URL";
+      } else {
+        const out = await generateAdImage(cfg, {
+          prompt: buildImagePrompt({ headline: adHeadline, accent }),
+          referenceUrl,
+          deadlineMs: Math.min(40_000, 50_000 - (Date.now() - started)),
+        });
+        if (!out.ok) {
+          reason = out.reason;
+          detail = `${out.status ?? ""} ${out.detail ?? ""}`.trim() || undefined;
+        } else {
+          // fal URLs are not durable: copy the image into our own private storage and keep only that path.
+          const image = await downloadGeneratedImage(out.imageUrl);
+          if (!image.ok) {
+            reason = "bad_response";
+            detail = image.reason;
+          } else {
+            const path = `${sessionId}/ad/output-${claim.generations}.${imageExtension(image.type)}`;
+            if (!(await uploadAsset(path, image.bytes, imageContentType(image.type)))) {
+              reason = "unavailable";
+              detail = "could not store the generated image";
+            } else {
+              const saved = await done({ ...card, source: "fal" } satisfies AdCreative, "fal", null, undefined, [path], "fal");
+              if (!saved) {
+                await removeAssets([path]);
+                return Response.json({ error: "wrong_step" }, { status: 409 }); // the user went back: nothing was stored
+              }
+              await removeAssets(claim.previousImagePaths.filter((p) => p !== path));
+              return Response.json({ ok: true, source: "fal" });
+            }
+          }
+        }
+      }
+    }
+
+    const saved = await done(card, "card", reason, detail, [], "fal");
+    if (!saved) return Response.json({ error: "wrong_step" }, { status: 409 });
+    await removeAssets(claim.previousImagePaths); // an earlier generated image is replaced by the card
+    return Response.json({ ok: true, source: "card", reason });
   }
 
   // ---- plan_campaign / get_leads: one streamed model request ----
