@@ -14,6 +14,7 @@ import { RATE_LIMIT_MESSAGE } from "@/lib/ai-errors";
 import type { AdCreative } from "@/lib/artifact/ad";
 import { pageModelSchema, type PageDefinition, type PartialPage } from "@/lib/artifact/page";
 import { playbookModelSchema, type PartialPlaybook, type Playbook } from "@/lib/artifact/playbook";
+import { CLIENT_GIVE_UP_SECONDS } from "@/lib/artifact/limits";
 import type { ArtifactProfile } from "@/lib/artifact/types";
 import { GOAL_CATALOG, type SessionState } from "@/lib/goals";
 import { downsizeToJpeg } from "@/lib/image-client";
@@ -30,7 +31,7 @@ const STEPS: Record<Artifact["type"], string[]> = {
   ad_creative: ["Reading your photo", "Setting up the scene", "Creating the image", "Checking the result"],
 };
 const STEP_SECONDS = 7;
-const GIVE_UP_SECONDS = 75;
+const GIVE_UP_SECONDS = CLIENT_GIVE_UP_SECONDS;
 const NOUN: Record<Artifact["type"], string> = { page: "landing page", playbook: "campaign playbook", ad_creative: "ad" };
 
 type Failure = "busy" | "limit" | "saved" | "wrong_step" | "network";
@@ -92,7 +93,7 @@ function Working({ steps, index, partial }: { steps: string[]; index: number; pa
             </li>
           ))}
         </ol>
-        <p className="text-xs text-foreground/60">These steps are a guide, not exact progress. It can take up to a minute.</p>
+        <p className="text-xs text-foreground/60">These steps are a guide, not exact progress. It can take a minute or more.</p>
       </div>
       {partial}
     </div>
@@ -392,7 +393,7 @@ export function BuildStep({ sessionId, state, onChange }: { sessionId: string; s
       <p className="text-base text-foreground/80">
         {type === "ad_creative"
           ? `Add a photo of your product and we'll turn it into an ad for ${name}.`
-          : `We'll write it from what we learned about ${name}. It can take up to a minute.`}
+          : `We'll write it from what we learned about ${name}. It can take a minute or more.`}
       </p>
 
       {type === "ad_creative" && (

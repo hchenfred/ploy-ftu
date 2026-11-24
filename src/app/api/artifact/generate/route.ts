@@ -6,6 +6,7 @@ import { generateAdImage } from "@/lib/artifact/fal-client";
 import { fallbackPage, pageModelSchema, validatePage } from "@/lib/artifact/page";
 import { fallbackPlaybook, playbookModelSchema, validatePlaybook } from "@/lib/artifact/playbook";
 import { buildArtifactInput } from "@/lib/artifact/prompt";
+import { MODEL_TIMEOUT_MS } from "@/lib/artifact/limits";
 import { deriveTheme } from "@/lib/artifact/theme";
 import { extractJson } from "@/lib/artifact/types";
 import { removeAssets, signedAssetUrl, uploadAsset } from "@/lib/artifact-storage";
@@ -16,7 +17,8 @@ import { GOAL_CATALOG } from "@/lib/goals";
 import { PAGE_PROMPT, PLAYBOOK_PROMPT } from "@/lib/prompts";
 import { loadSessionState } from "@/lib/session-state";
 
-// A streamed answer for a page or playbook can take a while: allow up to 60 s on Vercel.
+// The model may think for up to MODEL_TIMEOUT_MS, then we still need time to save the fallback. Must be a literal for
+// Next, and must equal ROUTE_MAX_DURATION_SECONDS (a unit test checks). Kept at 60 s so no Fluid compute is needed.
 export const maxDuration = 60;
 
 const Body = z.object({
@@ -167,7 +169,7 @@ export async function POST(req: Request) {
     system: isPage ? PAGE_PROMPT : PLAYBOOK_PROMPT,
     prompt,
     output: Output.object({ schema: isPage ? pageModelSchema : playbookModelSchema }),
-    abortSignal: AbortSignal.timeout(50_000), // a reasoning model can think for 45 s before it answers
+    abortSignal: AbortSignal.timeout(MODEL_TIMEOUT_MS), // a reasoning model can think for 45+ s before it answers
     maxRetries: 1,
     onError: ({ error }) => {
       streamError = error;

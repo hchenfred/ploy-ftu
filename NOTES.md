@@ -562,7 +562,7 @@ Two things to know about this model, both seen in real runs on 2026-11-23, plus 
 ### Still open
 - Step 7: the deployed-URL run (mocked suite and live tests except the fal one), AC status table in NOTES, and the human's manual test with a real
   photo (the headline-spelling and product-fidelity check, still 2 results on test photos).
-- Known gap: a generation that dies mid-way leaves a claim for 60 s that counts toward the cap of 3.
+- Known gap: a generation that dies mid-way leaves a claim for 65 s that counts toward the cap of 3.
 
 ## Bug found by the human's manual test of the deployed app (2026-11-23): raw JSON in a goal card
 - **Symptom:** a goal card showed "Customers love visual appeal of baked goods.},{goalType:" (a screenshot from the deployed site): the model's own JSON syntax
@@ -578,4 +578,61 @@ Two things to know about this model, both seen in real runs on 2026-11-23, plus 
   A first version of that test failed because its regex matched the normal `},{` between two objects in a JSON array: a test bug, fixed.
 - **Lesson:** the unit and live tests all used well-formed model output, so none could catch this. Real manual testing found it: keep manual runs of the
   deployed app in the plan. A weak model's malformed output is now the second case after wrong key names; both are handled at the point where model text enters.
+
+## Real-photo fal result and a loading-state bug, both from the human's manual testing (2026-11-24)
+- **fal worked locally with a real product photo** (a sourdough loaf, 32,583 bytes after the browser shrink). Result read from our own storage (no extra fal call): headline
+  "Starter Bakery" (no headline typed, so the business name) **spelled correctly and cleanly rendered**; the backdrop used the brand blue from the prompt; the loaf is
+  **recognizably the same loaf** (rounded oval, the long score down one side, the dark blistered crust) but it was **re-photographed from a different angle**, not kept pixel-for-pixel.
+  So "keep this exact product" is followed in spirit (same product) but not literally (new viewpoint and lighting). Evidence so far: 3 headlines spelled correctly in 3 generations
+  (2 on test images, 1 on a real product); still short of the 5 runs the spec asked for. Before the successful run: the first local attempt hit fal's 403 "Exhausted balance"
+  (reason `billing`), and the deployed site said "isn't set up yet" (`not_configured`: `FAL_KEY` not reaching the Vercel deployment); these were setup problems, not code.
+- **Bug: no loading state during research.** The loading line showed only while the chat request was `submitted`. The free model is a reasoning model, so within a second it starts
+  streaming silent reasoning (status `streaming`, nothing visible), and it thinks silently again after the research result, before writing the summary: two pauses of 10 to 45 s
+  with nothing on screen. Fix: `showReading` (busy, no research part and no text yet) and `showSummarizing` (research done, no text yet) in `SiteStep`; labels "Reading {domain}…",
+  "Thinking…" (no website) and "Summarizing what we found…". Tested with a streaming stub server that sends silent reasoning, then the result, then more silent reasoning
+  (a normal `route.fulfill` cannot do this): 2 new tests; **they fail on the old code and pass on the fix** (checked by restoring the old code).
+- **Lesson (again):** tests that reply instantly cannot show a gap in time; a slow, streaming stub was needed to reproduce what a reasoning model does.
+
+## Page generation timeout seen by the human (2026-11-24)
+- **What happened:** the page generation took **51.2 seconds, over the 50-second cap, so it fell back to the generic page; model speed varies widely.** The user saw
+  "That took too long, so we used a standard version. You can try again." Event log: `artifact_generated` page, `ms = 51232`, `source: fallback`, plus
+  `tool_failed { tool: "generateArtifact", reason: "timeout", detail: "The operation was aborted due to timeout" }`. Earlier runs with the same model: pages 15 to 22 s,
+  playbooks 10 to 16 s, one raw playbook run 45 s, so identical requests vary by more than 2x (the free model is a reasoning model).
+- **What to change is being researched** by a read-only agent (options: a higher cap if the Vercel plan allows, limiting the model's reasoning, one automatic retry, a faster
+  model for these two artifacts through an env var, not counting a timeout as one of the 3 tries, and an earlier "this is taking longer" message). Outcome to be recorded here.
+- **The wording was unclear to the user** ("a standard version"). It means the pre-written generic template that is saved when the AI's answer cannot be used (a timeout, a rate
+  limit, or an answer that does not follow the format); see the explanation in the chat. The note should say plainly that the AI did not finish and this is a basic template.
+
+### Decision: model wait raised from 50 s to 55 s (user's choice, 2026-11-24)
+- The user first asked for 60 s, then settled on **55 s**. 60 s would have needed `maxDuration` above 60 s, which needs Vercel Fluid compute (not verified for this project).
+  At 55 s the function limit can stay at **60 s**, so there is no platform risk, with 5 s left to save the fallback (a couple of database writes).
+- **Why 55 s and not 60 s:** the model wait and the function limit are tied. If the wait were 60 s with `maxDuration = 60`, Vercel would kill the function at the same moment the
+  wait ends, before the fallback is saved: the user would see an error and nothing would be stored. Keeping a 60 s wait safe means raising `maxDuration` (we tried 90 s), and
+  anything over 60 s needs Vercel Fluid compute, which we have not confirmed is on for this project. 55 s keeps `maxDuration` at 60 s (no platform dependency, no deploy risk) and
+  still leaves 5 s to save the fallback. It adds 5 s over the old 50 s cap; the run that failed took 51.2 s, so it would now have succeeded. Revisit if Fluid is confirmed (then 60 s
+  or more with a 90 s limit is possible) or if the model is swapped for a faster one.
+- The limits depend on each other, so they live in `src/lib/artifact/limits.ts`: model wait **55 s**, function limit **60 s**, claim expiry **65 s** (must outlive the function, or a retry
+  could start while the first request still runs), browser give-up **70 s**. `e2e/unit/limits.test.ts` checks the order and that the route's literal `maxDuration` matches.
+  The wait note now says "It can take a minute or more."
+- Not changed: the fal ad deadline (40 s, capped to 50 s from the start of the request), the wording of the fallback note, and counting a timeout as one of the 3 tries (all still open).
+
+## Free models available through the Vercel AI Gateway (read from its public catalog, 2026-11-24; nothing was called or tested)
+Source: `https://ai-gateway.vercel.sh/v1/models` (518 models; no key needed). The catalog's `free` tag is on only 2 models, so I also listed language models priced at zero or named
+`*-free`: **six in total, and every one is a reasoning model** (none is non-reasoning, none is tagged `fast`).
+
+| Model | Structured output (`response_format`) | Tools | Reasoning control in the catalog |
+| --- | --- | --- | --- |
+| `nvidia/nemotron-3.5-lightning-free` (current) | yes | yes | **toggle, and effort: none / low / medium / high** |
+| `reflection/beam-free` (and `reflection/beam`, priced 0 and varying by provider) | yes | yes | effort: low / medium / high / xhigh / max (no `none`) |
+| `recursive/flint-v1.0` | yes | yes | effort: low / medium / high |
+| `humansand/ampersand-v0.1` | **no** | yes | effort: low / medium / high / max |
+| `stealth/glyph-cluster` | **no** | yes | effort: low / medium / high / xhigh |
+
+- **The strongest lead is on the model we already use:** the catalog says nemotron supports `reasoning` effort `none` and `low` (the research agent could not confirm this from the model page).
+  Setting it should cut the silent thinking time that caused the 51 s timeout, if the Gateway honours it for this model.
+- The two models without `response_format` are a poor fit (the artifact route relies on structured output). `ampersand-v0.1`, `glyph-cluster` and `flint-v1.0` are very new or "stealth"
+  models with unknown quality. `reflection/beam-free` (1M context, structured output, tools) is the most plausible second choice.
+- **Not verified:** latency, schema compliance, and rate limits of any of them; whether each is really usable on the free tier (the Gateway answered "Free tier users do not have access to this
+  model" for a paid model earlier); whether the AI SDK's `reasoning` option reaches the model through the Gateway. A small benchmark (the same page prompt several times per setting: latency
+  and whether the answer parses) is the way to find out. Swapping the model is only `MODEL_ID`.
 

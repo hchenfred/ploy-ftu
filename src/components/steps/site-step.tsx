@@ -120,6 +120,17 @@ export function SiteStep({ sessionId, onDone }: { sessionId: string; onDone: () 
     lastIsAssistant &&
     last.parts.some((p) => p.type === "tool-researchSite" && p.state === "output-available" && p.output.ok);
 
+  // A reasoning model thinks silently for 10 to 45 s, first before it calls the tool and again before it writes the summary. During
+  // that time the request is "streaming" but nothing visible has arrived, so the loading line must not depend on "submitted":
+  // it stays up while we are busy and have neither a research part nor any text yet, and again between the result and the text.
+  const hasText = lastIsAssistant && last.parts.some((p) => p.type === "text" && !!p.text);
+  const hasResearchPart = lastIsAssistant && last.parts.some((p) => p.type === "tool-researchSite");
+  const researchDone =
+    lastIsAssistant &&
+    last.parts.some((p) => p.type === "tool-researchSite" && (p.state === "output-available" || p.state === "output-error"));
+  const showReading = busy && !hasResearchPart && !hasText;
+  const showSummarizing = busy && researchDone && !hasText;
+
   // Continue appears once the chat turn is finished and the server has what it needs to move on.
   const showContinue =
     status === "ready" && !error && !descriptionError && (researchOk || (descriptionSaved && lastIsAssistant));
@@ -199,11 +210,19 @@ export function SiteStep({ sessionId, onDone }: { sessionId: string; onDone: () 
               </Message>
             ))}
 
-            {/* Before the assistant message exists (or while it has no visible parts) */}
-            {status === "submitted" && (
+            {/* Before anything visible has arrived (the model may be thinking silently for a while) */}
+            {showReading && (
               <Message>
                 <MessageContent>
                   <Working label={pendingDomain ? `Reading ${pendingDomain}…` : "Thinking…"} />
+                </MessageContent>
+              </Message>
+            )}
+            {/* After the research result, while the model thinks before writing its short summary */}
+            {showSummarizing && (
+              <Message>
+                <MessageContent>
+                  <Working label={researchOk ? "Summarizing what we found…" : "Thinking…"} />
                 </MessageContent>
               </Message>
             )}

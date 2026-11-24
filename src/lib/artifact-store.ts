@@ -1,6 +1,7 @@
 import "server-only";
 import { removeAssets } from "@/lib/artifact-storage";
 import { supabaseAdmin } from "@/lib/supabase-server";
+import { CLAIM_TTL_MS } from "@/lib/artifact/limits";
 import type { ArtifactProfile } from "@/lib/artifact/types";
 import type { ArtifactPromptInput } from "@/lib/artifact/prompt";
 import type { GoalType } from "@/lib/goals";
@@ -9,7 +10,6 @@ import type { GoalType } from "@/lib/goals";
 // `{ meta, content }`; `meta` counts generations and holds a short-lived claim so two requests cannot generate at once.
 
 export const MAX_GENERATIONS = 3;
-const CLAIM_TTL_MS = 60_000;
 
 export type ArtifactType = "ad_creative" | "page" | "playbook";
 export type ArtifactSource = "model" | "fallback" | "card" | "fal";
