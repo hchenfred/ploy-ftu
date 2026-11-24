@@ -127,7 +127,7 @@ Model-facing schemas are **loose**: descriptions ask for short, complete text, m
 
 ### FR-24 `BuildStep` (replaces `NextUpStep`)
 States, all reachable by refresh from `SessionState.artifact`:
-1. **Inputs** (only `launch_product`): photo picker (with a thumbnail), optional headline, "Generate" and "Skip the photo".
+1. **Inputs / intro:** a short intro for every goal with the chosen goal shown ("Your goal: ..."), a **Generate** button (generation starts on the click, never automatically: a model request or a fal call should always be the user's choice), and for `launch_product` only: a photo picker (with a thumbnail, shrunk in the browser first), an optional headline, the line that the photo is sent to an image service, and "Skip the photo" (shown only while no photo is uploaded; Generate waits for a photo).
 2. **Generating:** a named playbook of steps (for example "Reading your site", "Choosing the layout", "Writing the copy", "Checking the result"); wording and progress only, not a real Ploybooks feature. Page and playbook show the **streamed partial object** under it; the ad shows the steps and an honest "Up to 45 seconds" note. The Generate click shows feedback within 1 second.
 3. **Preview:** the artifact, "Regenerate" (shown with the remaining count, at most 3 generations) and **"Save"**.
 4. **Saved:** "Saved" confirmation, the artifact, and the **hand-off card** (FR-25). No back link after saving; a "Start over" link calls `resetSession()` and begins a new run.

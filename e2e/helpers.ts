@@ -135,7 +135,21 @@ export type FakeInit = {
   backFails?: boolean;
   chooseFails?: boolean;
   sessionId?: string;
+  /** The artifact the session already has (a draft, or saved), and the uploaded photo. */
+  artifact?: SessionState["artifact"];
+  photo?: SessionState["photo"];
+  /** Answers for successive POST /api/artifact/generate calls (the last one repeats). */
+  generate?: GenStep[];
+  saveFails?: boolean;
+  /** Make POST /api/uploads/photo answer with this status and error instead of accepting the photo. */
+  uploadFails?: { status: number; error: string };
 };
+
+/** One scripted answer for the generate route: a result (which becomes the session's artifact), or an error. */
+export type GenStep =
+  | { artifact: NonNullable<SessionState["artifact"]>; delayMs?: number }
+  | { status: number; error: string }
+  | "abort";
 
 export async function fakeBackend(page: Page, init: FakeInit = {}) {
   const sid = init.sessionId ?? FAKE_ID;
@@ -152,10 +166,21 @@ export async function fakeBackend(page: Page, init: FakeInit = {}) {
       suggestedGoals: init.suggestedGoals === undefined ? null : init.suggestedGoals,
     },
     goal: init.goal ?? null,
-    photo: null,
-    artifact: null,
+    photo: init.photo ?? null,
+    artifact: init.artifact ?? null,
   };
-  const log = { getState: 0, suggest: 0, choose: [] as Record<string, unknown>[], back: 0, describe: [] as Record<string, unknown>[] };
+  const log = {
+    getState: 0,
+    suggest: 0,
+    choose: [] as Record<string, unknown>[],
+    back: 0,
+    describe: [] as Record<string, unknown>[],
+    generate: [] as Record<string, unknown>[],
+    save: 0,
+    handoff: [] as Record<string, unknown>[],
+    upload: 0,
+  };
+  let generateCall = 0;
   let stale = !!init.staleFirst;
   let suggestCall = 0;
 
@@ -199,9 +224,12 @@ export async function fakeBackend(page: Page, init: FakeInit = {}) {
   await page.route("**/api/step/back", async (route) => {
     log.back++;
     if (init.backFails) return route.fulfill({ status: 500, json: { error: "x" } });
+    if (state.artifact?.saved) return route.fulfill({ status: 409, json: { error: "saved" } });
     if (state.status === "building") {
       state.status = "goal";
       state.goal = null; // suggestions are kept
+      state.artifact = null; // the draft and the photo are deleted
+      state.photo = null;
     } else if (state.status === "goal") {
       state.status = "site";
       state.goal = null;
@@ -216,6 +244,40 @@ export async function fakeBackend(page: Page, init: FakeInit = {}) {
     state.profile = { name: null, domain: null, summary: null, brand: {}, description: String(body.description).trim(), suggestedGoals: null };
     state.status = "goal";
     return route.fulfill({ json: { ok: true, status: "goal" } });
+  });
+
+  await page.route("**/api/artifact/generate", async (route) => {
+    log.generate.push(route.request().postDataJSON() as Record<string, unknown>);
+    const script = init.generate ?? [];
+    const step = script[Math.min(generateCall++, script.length - 1)];
+    if (!step || step === "abort") return route.abort("failed");
+    if ("status" in step) return route.fulfill({ status: step.status, json: { error: step.error } });
+    if (step.delayMs) await new Promise((r) => setTimeout(r, step.delayMs));
+    state.artifact = { ...step.artifact, generations: (state.artifact?.generations ?? 0) + 1, saved: false };
+    // A page or playbook comes back as streamed JSON text; the ad comes back as plain JSON.
+    return step.artifact.type === "ad_creative"
+      ? route.fulfill({ json: { ok: true, source: step.artifact.source, reason: step.artifact.reason } })
+      : route.fulfill({ status: 200, contentType: "text/plain; charset=utf-8", body: JSON.stringify(step.artifact.content) });
+  });
+
+  await page.route("**/api/artifact/save", async (route) => {
+    log.save++;
+    if (init.saveFails) return route.fulfill({ status: 500, json: { error: "x" } });
+    if (!state.artifact) return route.fulfill({ status: 409, json: { error: "wrong_step" } });
+    state.artifact = { ...state.artifact, saved: true };
+    return route.fulfill({ json: { ok: true, saved: true } });
+  });
+
+  await page.route("**/api/handoff", async (route) => {
+    log.handoff.push(route.request().postDataJSON() as Record<string, unknown>);
+    return state.artifact?.saved ? route.fulfill({ json: { ok: true } }) : route.fulfill({ status: 409, json: { error: "not_saved" } });
+  });
+
+  await page.route("**/api/uploads/photo", async (route) => {
+    log.upload++;
+    if (init.uploadFails) return route.fulfill({ status: init.uploadFails.status, json: { error: init.uploadFails.error } });
+    state.photo = { bytes: 40_960 };
+    return route.fulfill({ json: { ok: true, bytes: 40_960 } });
   });
 
   return { state, log, sessionId: sid };

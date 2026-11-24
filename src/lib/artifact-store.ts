@@ -1,4 +1,5 @@
 import "server-only";
+import { removeAssets } from "@/lib/artifact-storage";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import type { ArtifactProfile } from "@/lib/artifact/types";
 import type { ArtifactPromptInput } from "@/lib/artifact/prompt";
@@ -174,3 +175,37 @@ export async function loadArtifactInput(
     },
   };
 }
+
+/** Whether a generation claim is still fresh (someone is generating right now). */
+export function isClaimActive(row: ArtifactRow | null): boolean {
+  const at = row?.data?.meta?.claimedAt;
+  return !!at && Date.now() - Date.parse(at) < CLAIM_TTL_MS;
+}
+
+/**
+ * Delete the draft artifact, its stored images and the uploaded photo, and forget the photo on the profile. Used when the user goes
+ * back before saving. Database errors are logged and swallowed (best effort), so going back never fails on cleanup.
+ */
+export async function cleanupDraft(sessionId: string): Promise<void> {
+  const db = supabaseAdmin();
+  try {
+    const row = await getArtifact(sessionId);
+    const { data: profile } = await db.from("business_profiles").select("content").eq("session_id", sessionId).maybeSingle();
+    const content = (profile?.content ?? {}) as Record<string, unknown> & { photo?: { path?: string } };
+    const paths = [...(row?.image_paths ?? []), ...(typeof content.photo?.path === "string" ? [content.photo.path] : [])];
+
+    if (row) {
+      const { error } = await db.from("artifacts").delete().eq("id", row.id).is("saved_at", null); // never delete a saved artifact
+      if (error) console.error("[artifact-store] cleanup: deleting the draft failed:", error.message);
+    }
+    if (content.photo) {
+      const { photo: _photo, ...rest } = content;
+      void _photo;
+      await db.from("business_profiles").update({ content: rest }).eq("session_id", sessionId);
+    }
+    await removeAssets(paths);
+  } catch (err) {
+    console.error("[artifact-store] cleanup failed:", err);
+  }
+}
+

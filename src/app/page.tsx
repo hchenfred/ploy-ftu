@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { ProgressSteps } from "@/components/progress-steps";
 import { useSession } from "@/components/session-provider";
 import { GoalStep } from "@/components/steps/goal-step";
-import { NextUpStep } from "@/components/steps/next-up-step";
+import { BuildStep } from "@/components/steps/build-step";
 import { SiteStep } from "@/components/steps/site-step";
 import { Button } from "@/components/ui/button";
 import { useSessionState } from "@/lib/use-session-state";
@@ -61,8 +61,8 @@ export default function Home() {
         <>
           {state.status === "site" && <SiteStep sessionId={sessionId} onDone={refresh} />}
           {state.status === "goal" && <GoalStep sessionId={sessionId} state={state} onChange={refresh} />}
-          {(state.status === "building" || state.status === "live") && (
-            <NextUpStep sessionId={sessionId} state={state} onChange={refresh} />
+          {(state.status === "building" || state.status === "live") && state.goal && (
+            <BuildStep key={state.goal.goalType} sessionId={sessionId} state={state} onChange={refresh} />
           )}
         </>
       )}

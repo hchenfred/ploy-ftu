@@ -11,7 +11,8 @@ const step = (page: Page) =>
 const radios = (page: Page) => page.getByRole("radiogroup", { name: "Your goal" }).getByRole("radio");
 const cont = (page: Page) => page.getByRole("button", { name: "Continue" });
 const heading = (page: Page) => page.getByRole("heading", { name: "What do you want to create first?" });
-const saved = (page: Page) => page.getByRole("heading", { name: "Your goal is saved" });
+// After a goal is chosen the build screen (step 3) opens: its intro heading.
+const saved = (page: Page) => page.getByRole("heading", { name: /^Let.s make your first / });
 const FALLBACK = "We couldn't tailor suggestions, so here are the common goals.";
 const SAVED_GOAL = { goalType: "plan_campaign", label: "Label for plan_campaign" } as const;
 const badge = (page: Page) => page.getByText("Recommended", { exact: true });

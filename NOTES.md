@@ -530,3 +530,37 @@ Two things to know about this model, both seen in real runs on 2026-11-23, plus 
 - Price per image; concurrency limit; the 5-run headline and product-fidelity check on real product photos; cleanup of stored
   files on `step/back` (step 6); the browser-side downsizing and the upload UI (step 6, `BuildStep`).
 
+## Working rules decided during Milestone 3 (human)
+- **Do not run tests that call fal.ai unless asked: they spend credit.** The one live test that makes a real fal call is skipped
+  unless `RUN_FAL=1` is set. The mocked suite, the unit tests and the other live tests never call fal.
+- **Build-screen progress is a light, time-based guide** (the steps advance on a timer and hold on the last one), labelled as a guide,
+  because the free reasoning model gives no real progress signal.
+
+## Milestone 3, step 6 (the build screen, save and hand-off) built (2026-11-23)
+### What was built
+- `BuildStep` replaces the placeholder end screen (`next-up-step.tsx` is deleted). States: **intro** (the chosen goal, a Generate button; for the ad a photo
+  picker, headline and the "sent to an image service" line), **generating** (named steps on a timer plus any streamed partial object), **preview**
+  (Regenerate with the remaining count, Save, Change my goal, a plain note when a standard version or a text-only card was used), **saved**
+  (confirmation, the artifact, the hand-off card with the link, Start over; no way back). All derived from `SessionState`, so a refresh resumes.
+- **Decisions:** (1) Generate is a **button, not automatic**: a model request or a fal call is always the user's choice, and it avoids a double
+  start from React Strict Mode. (2) The progress steps are a **light time-based guide** (7 s per step, holds on the last one) and the screen says
+  so; one `waiting` value is derived from the state (waiting until the server shows a newer generation), with no effect-driven state. (3) If the
+  route answers `busy` (a reload, a second tab) the screen **polls the state** every 3 s and shows the result when it appears; after 75 s it offers
+  Try again. (4) The photo is **shrunk in the browser** (1,600 px, JPEG 0.85; also drops location data); unreadable files such as HEIC are refused
+  before any request with a plain message. (5) `useObject` wiring landed here (page and playbook); with the current model the stream is one chunk at
+  the end, so the screen shows the steps and then the saved draft, which the server validated and saved before the response closed.
+- **Server:** `POST /api/artifact/save` (idempotent; refuses a draft still being generated; logs `artifact_saved` once with `secondsSinceStart`),
+  `POST /api/handoff` (only after saving; logs `handoff_clicked`), `step/back` now **deletes the draft, the generated image and the uploaded photo**
+  (and forgets the photo on the profile) and refuses once saved, `supabase/queries/activation.sql` (median time to first saved artifact, funnel,
+  goal chosen vs recommended, saved per goal and source, failures by tool, hand-off clicks per goal).
+### Tests
+- Mocked **66/66** (16 new for the build screen: each goal's full path, the timed steps with a fake clock, regenerate countdown and the 3-try limit, every
+  fallback note, limit/network/busy/save errors, going back, refresh resume for each state, Start over, the ad photo flow, refused files, the hand-off
+  link attributes and that it still opens when logging fails). Unit 44/44. Live: the new save, busy-save, hand-off and cleanup tests pass.
+- One of my own tests matched two "current step" markers (the onboarding bar also uses `aria-current`); fixed the locator.
+- **No test in this step calls fal.** The one that does is skipped unless `RUN_FAL=1`; none of the others generates an ad after a photo is uploaded.
+### Still open
+- Step 7: the deployed-URL run (mocked suite and live tests except the fal one), AC status table in NOTES, and the human's manual test with a real
+  photo (the headline-spelling and product-fidelity check, still 2 results on test photos).
+- Known gap: a generation that dies mid-way leaves a claim for 60 s that counts toward the cap of 3.
+

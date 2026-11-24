@@ -85,6 +85,99 @@ test("a leftover draft for a different goal is hidden from the state", async ({ 
   expect(((await (await request.get(`/api/sessions/${id}`)).json()) as State).artifact).toBeNull();
 });
 
+// ---------- save, hand-off and going back (step 6) ----------
+const ids = (page: import("@playwright/test").Page, goal: { goal_type: string; goal_label: string }) => seedSession(page, { ...building(goal) });
+const events = (id: string) => db<{ name: string; props: Record<string, unknown> }>("events", `session_id=eq.${id}&select=name,props&order=id`);
+
+test("save: guards, then the artifact is saved once and the activation event carries the seconds since the start", async ({ page, request }) => {
+  const id = await ids(page, LAUNCH);
+  expect((await request.post("/api/artifact/save", { data: { sessionId: "nope" } })).status()).toBe(400);
+  expect((await request.post("/api/artifact/save", { data: { sessionId: "00000000-0000-4000-8000-000000000000" } })).status()).toBe(404);
+  const early = await request.post("/api/artifact/save", { data: { sessionId: id } }); // nothing generated yet
+  expect(early.status()).toBe(409);
+  expect(await early.json()).toEqual({ error: "wrong_step" });
+
+  await request.post("/api/artifact/generate", { data: { sessionId: id, headline: "Fresh bread daily" } }); // no photo: a plain card, no model, no fal
+  const first = await request.post("/api/artifact/save", { data: { sessionId: id } });
+  expect(first.status()).toBe(200);
+  expect(await first.json()).toEqual({ ok: true, saved: true });
+  const second = await request.post("/api/artifact/save", { data: { sessionId: id } }); // repeating changes nothing
+  expect(second.status()).toBe(200);
+
+  const row = await db<{ saved_at: string | null }>("artifacts", `session_id=eq.${id}&select=saved_at`);
+  expect(row[0].saved_at).toBeTruthy();
+  const saved = (await events(id)).filter((e) => e.name === "artifact_saved");
+  expect(saved).toHaveLength(1); // logged once, not twice
+  expect(saved[0].props).toMatchObject({ goalType: "launch_product", artifactType: "ad_creative", source: "card" });
+  expect(typeof saved[0].props.secondsSinceStart).toBe("number");
+  expect(saved[0].props.secondsSinceStart as number).toBeGreaterThanOrEqual(0);
+
+  // a saved artifact is final: no regenerating and no going back
+  expect(((await (await request.get(`/api/sessions/${id}`)).json()) as State).artifact!.saved).toBe(true);
+  const regen = await request.post("/api/artifact/generate", { data: { sessionId: id } });
+  expect(regen.status()).toBe(409);
+  expect(await regen.json()).toEqual({ error: "saved" });
+  const back = await request.post("/api/step/back", { data: { sessionId: id } });
+  expect(back.status()).toBe(409);
+  expect(await back.json()).toEqual({ error: "saved" });
+  expect(((await (await request.get(`/api/sessions/${id}`)).json()) as { status: string }).status).toBe("building");
+});
+
+test("save refuses a draft that is still being generated", async ({ page, request }) => {
+  const id = await ids(page, LAUNCH);
+  await request.post("/api/artifact/generate", { data: { sessionId: id } });
+  const rows = await db<{ data: { meta: Record<string, unknown>; content: unknown } }>("artifacts", `session_id=eq.${id}&select=data`);
+  const data = { ...rows[0].data, meta: { ...rows[0].data.meta, claimedAt: new Date().toISOString() } }; // a generation is running right now
+  await dbWrite("PATCH", `artifacts?session_id=eq.${id}`, { data });
+  const res = await request.post("/api/artifact/save", { data: { sessionId: id } });
+  expect(res.status()).toBe(409);
+  expect(await res.json()).toEqual({ error: "busy" });
+  expect((await events(id)).some((e) => e.name === "artifact_saved")).toBe(false);
+});
+
+test("hand-off: only after saving, and the click is logged with the goal and the primitive", async ({ page, request }) => {
+  const id = await ids(page, LAUNCH);
+  expect((await request.post("/api/handoff", { data: { sessionId: "nope" } })).status()).toBe(400);
+  expect((await request.post("/api/handoff", { data: { sessionId: "00000000-0000-4000-8000-000000000000" } })).status()).toBe(404);
+  await request.post("/api/artifact/generate", { data: { sessionId: id } });
+  const before = await request.post("/api/handoff", { data: { sessionId: id } });
+  expect(before.status()).toBe(409);
+  expect(await before.json()).toEqual({ error: "not_saved" });
+
+  await request.post("/api/artifact/save", { data: { sessionId: id } });
+  const res = await request.post("/api/handoff", { data: { sessionId: id } });
+  expect(res.status()).toBe(200);
+  expect((await events(id)).find((e) => e.name === "handoff_clicked")?.props).toEqual({ goalType: "launch_product", primitive: "ads" });
+});
+
+test("going back before saving deletes the draft, the generated image and the uploaded photo", async ({ page, request }) => {
+  const id = await ids(page, LAUNCH);
+  await request.post("/api/artifact/generate", { data: { sessionId: id } }); // a plain card: the photo comes AFTER, so fal is never called here
+  expect((await upload(request, id, { name: "p.png", mimeType: "image/png", buffer: makePng(32) })).status()).toBe(200);
+  // pretend an earlier generation left an image in storage and on the row
+  const out = `${id}/ad/output-1.jpg`;
+  await fetch(`${process.env.SUPABASE_URL}/storage/v1/object/assets/${out}`, {
+    method: "POST",
+    headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, "content-type": "image/jpeg", "x-upsert": "true" },
+    body: fakeJpeg(),
+  });
+  await dbWrite("PATCH", `artifacts?session_id=eq.${id}`, { image_paths: [out] });
+  expect(await assetStatus(out)).toBe(200);
+  expect(await assetStatus(`${id}/ad/reference.png`)).toBe(200);
+
+  const back = await request.post("/api/step/back", { data: { sessionId: id } });
+  expect(back.status()).toBe(200);
+  expect(await back.json()).toEqual({ status: "goal" });
+  expect(await db("artifacts", `session_id=eq.${id}&select=id`)).toHaveLength(0); // the draft is gone
+  expect(await assetStatus(out)).not.toBe(200); // the image is gone
+  expect(await assetStatus(`${id}/ad/reference.png`)).not.toBe(200); // the photo is gone
+  const profile = await db<{ content: { photo?: unknown; digest?: string } }>("business_profiles", `session_id=eq.${id}&select=content`);
+  expect(profile[0].content.photo).toBeUndefined(); // the photo reference is forgotten
+  expect(profile[0].content.digest).toBeTruthy(); // the scraped text is kept
+  const state = (await (await request.get(`/api/sessions/${id}`)).json()) as { status: string; photo: unknown; artifact: unknown };
+  expect(state).toMatchObject({ status: "goal", photo: null, artifact: null });
+});
+
 // ---------- the product photo upload and the fal ad ----------
 const upload = (request: import("@playwright/test").APIRequestContext, sessionId: string, file: { name: string; mimeType: string; buffer: Buffer } | null, fields: Record<string, string> = { sessionId }) =>
   request.post("/api/uploads/photo", { multipart: file ? { ...fields, file } : fields });
@@ -138,6 +231,8 @@ test("photo upload: the real type decides the name; a new photo replaces the old
 });
 
 test("ad with a photo: fal makes the image, we copy it into our storage (or the labeled card if fal cannot)", async ({ page, request }) => {
+  // This is the only test that spends fal credit, so it is OFF unless asked for: RUN_FAL=1 npx playwright test ...
+  test.skip(!process.env.RUN_FAL, "spends fal credit: set RUN_FAL=1 to run it");
   test.info().annotations.push({ type: "fal", description: "1 real fal call (a few cents)" });
   const id = await seedSession(page, { ...building(LAUNCH) });
   expect((await upload(request, id, { name: "product.png", mimeType: "image/png", buffer: makePng(256) })).status()).toBe(200);

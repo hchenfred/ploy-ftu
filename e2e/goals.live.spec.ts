@@ -13,7 +13,8 @@ const step = (page: Page) =>
   page.getByRole("navigation", { name: "Onboarding progress" }).locator("[aria-current=step]");
 const radios = (page: Page) => page.getByRole("radiogroup", { name: "Your goal" }).getByRole("radio");
 const cont = (page: Page) => page.getByRole("button", { name: "Continue" });
-const saved = (page: Page) => page.getByRole("heading", { name: "Your goal is saved" });
+// After a goal is chosen the build screen (step 3) opens: its intro heading.
+const saved = (page: Page) => page.getByRole("heading", { name: /^Let.s make your first / });
 const countSuggest = (page: Page) => {
   const c = { n: 0 };
   page.on("request", (r) => r.url().endsWith("/api/goals/suggest") && c.n++);
@@ -54,7 +55,7 @@ test("AC-20/27/28/30: saved suggestions show with no model request; choosing sav
   await cont(page).click();
   await expect(saved(page)).toBeVisible();
   await expect(step(page)).toContainText("First win");
-  await expect(page.getByText("Coming soon")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Generate" })).toBeVisible(); // the build screen waits for the user to start it
 
   const row = await one<Record<string, unknown>>("sessions", `id=eq.${id}&select=status,goal_type,goal_label,goal_custom_text`);
   expect(row).toEqual({ status: "building", goal_type: "plan_campaign", goal_label: "Label for plan_campaign", goal_custom_text: null });

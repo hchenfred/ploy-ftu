@@ -13,7 +13,9 @@ export type EventName =
   | "goal_chosen"
   | "step_back"
   | "artifact_generated"
-  | "photo_uploaded";
+  | "photo_uploaded"
+  | "artifact_saved"
+  | "handoff_clicked";
 
 export async function logEvent(
   sessionId: string | null,

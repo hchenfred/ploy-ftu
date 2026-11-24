@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { logEvent } from "@/lib/events";
+import { cleanupDraft, getArtifact } from "@/lib/artifact-store";
 import { loadSessionState } from "@/lib/session-state";
 import type { SessionStatus } from "@/lib/goals";
 
@@ -23,6 +24,10 @@ export async function POST(req: Request) {
   const from = current.state.status;
   if (from === "site") return Response.json({ status: "site" }); // nothing before step 1: no-op
   if (from === "live") return Response.json({ error: "wrong_step" }, { status: 409 }); // not used in M2
+
+  // A saved artifact is final: the way out is "Start over" (a new session), not going back.
+  const draft = await getArtifact(sessionId).catch(() => null);
+  if (draft?.saved_at) return Response.json({ error: "saved" }, { status: 409 });
 
   const db = supabaseAdmin();
   const clearGoal = { goal_type: null, goal_label: null, goal_custom_text: null };
@@ -57,6 +62,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Could not go back" }, { status: 500 });
   }
   if (data && data.length > 0) {
+    await cleanupDraft(sessionId); // the draft artifact, its images and the uploaded photo (a generation still running will not save: the session is no longer building)
     await logEvent(sessionId, "step_back", { from, to });
     return Response.json({ status: to });
   }
