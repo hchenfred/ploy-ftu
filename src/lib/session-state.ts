@@ -43,7 +43,7 @@ export async function loadSessionState(sessionId: string): Promise<LoadResult> {
     const db = supabaseAdmin();
     const { data: session, error } = await db
       .from("sessions")
-      .select("status, goal_type, goal_label, goal_custom_text")
+      .select("status, goal_type, goal_label")
       .eq("id", sessionId)
       .maybeSingle();
     if (error) {
@@ -76,13 +76,7 @@ export async function loadSessionState(sessionId: string): Promise<LoadResult> {
               suggestedGoals: (profile.suggested_goals as SuggestedGoal[] | null) ?? null,
             }
           : null,
-        goal: session.goal_label
-          ? {
-              goalType: session.goal_type ?? null,
-              label: session.goal_label,
-              customText: session.goal_custom_text ?? null,
-            }
-          : null,
+        goal: session.goal_label && session.goal_type ? { goalType: session.goal_type, label: session.goal_label } : null,
       },
     };
   } catch (err) {

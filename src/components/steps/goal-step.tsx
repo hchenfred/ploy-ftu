@@ -3,19 +3,17 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { RATE_LIMIT_MESSAGE } from "@/lib/ai-errors";
 import {
   ALL_DEFAULT_GOALS,
-  type GoalType,
+  GOAL_CATALOG,
+  PRIMITIVE_LABELS,
+  recommendedGoal,
   type SessionState,
   type SuggestedGoal,
   type SuggestGoalsResponse,
 } from "@/lib/goals";
 import { goBack } from "@/lib/use-session-state";
-
-type Choice = GoalType | "custom";
 
 // One in-flight suggestions request per session. React Strict Mode runs effects twice in dev; sharing the
 // promise keeps that from spending two model requests (the free model allows ~5 per minute).
@@ -43,10 +41,10 @@ function requestSuggestions(sessionId: string): Promise<SuggestGoalsResponse> {
   return promise;
 }
 
-const CUSTOM_OPTION = { key: "custom" as const, label: "Something else", reason: "Describe your own goal." };
-
-// Step 2: "Your goal". Shows the saved suggestions right away, or asks the server for them (one model
-// request). If that fails, the four common goals are shown instead, so there is never a dead end.
+// Step 2: "Your goal". The user picks one of three goals; the model's best-fit suggestion is marked "Recommended" and
+// pre-selected (the user can pick any card). Saved suggestions show right away, otherwise the server is asked for them
+// (one model request). If that fails, the three default goals are shown instead, with no recommendation, so there is
+// never a dead end.
 export function GoalStep({
   sessionId,
   state,
@@ -58,8 +56,7 @@ export function GoalStep({
 }) {
   const savedGoals = state.profile?.suggestedGoals ?? null;
   const [result, setResult] = useState<SuggestGoalsResponse | null>(null);
-  const [choice, setChoice] = useState<Choice | null>(null);
-  const [customText, setCustomText] = useState("");
+  const [choice, setChoice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -82,8 +79,10 @@ export function GoalStep({
   const summary = state.profile?.summary ?? (result?.ok ? result.summary : null);
   const name = state.profile?.name ?? state.profile?.domain ?? null;
 
-  const options = goals ? [...goals.map((g) => ({ key: g.goalType as Choice, label: g.label, reason: g.reason })), CUSTOM_OPTION] : [];
-  const canContinue = choice !== null && (choice !== "custom" || customText.trim().length >= 3);
+  // The model's best fit, or null when the goals are defaults. Pre-selected until the user picks another card.
+  const recommended = recommendedGoal(goals);
+  const selected = choice ?? recommended;
+  const canContinue = selected !== null;
 
   function retry() {
     setResult(null);
@@ -92,18 +91,14 @@ export function GoalStep({
   }
 
   async function submit() {
-    if (!canContinue || submitting) return;
+    if (!selected || submitting) return;
     setSubmitting(true);
     setSubmitError(false);
     try {
-      const body =
-        choice === "custom"
-          ? { sessionId, kind: "custom", customText: customText.trim() }
-          : { sessionId, kind: "suggested", goalType: choice };
       const res = await fetch("/api/goals/choose", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ sessionId, kind: "suggested", goalType: selected }),
       });
       if (!res.ok) throw new Error(String(res.status));
       onChange(); // the shell re-reads the status and moves to the next step
@@ -114,17 +109,18 @@ export function GoalStep({
   }
 
   function onOptionKeyDown(e: KeyboardEvent, index: number) {
+    if (!goals) return;
     if (e.key === "Enter" && canContinue) {
       e.preventDefault();
       void submit();
       return;
     }
     let next: number;
-    if (e.key === "ArrowDown" || e.key === "ArrowRight") next = (index + 1) % options.length;
-    else if (e.key === "ArrowUp" || e.key === "ArrowLeft") next = (index - 1 + options.length) % options.length;
+    if (e.key === "ArrowDown" || e.key === "ArrowRight") next = (index + 1) % goals.length;
+    else if (e.key === "ArrowUp" || e.key === "ArrowLeft") next = (index - 1 + goals.length) % goals.length;
     else return;
     e.preventDefault();
-    setChoice(options[next].key);
+    setChoice(goals[next].goalType);
     optionRefs.current[next]?.focus();
   }
 
@@ -140,7 +136,7 @@ export function GoalStep({
   return (
     <section className="flex flex-col gap-6">
       <h1 className="font-heading text-3xl font-semibold tracking-tight sm:text-4xl">
-        What do you want your website to do?
+        What do you want to create first?
       </h1>
 
       {(name || summary) && (
@@ -175,44 +171,39 @@ export function GoalStep({
       {goals && (
         <>
           <div role="radiogroup" aria-label="Your goal" className="flex flex-col gap-3">
-            {options.map((opt, i) => {
-              const selected = choice === opt.key;
+            {goals.map((goal, i) => {
+              const isSelected = selected === goal.goalType;
+              const primitive = PRIMITIVE_LABELS[GOAL_CATALOG[goal.goalType].handoff.primitive];
               return (
                 <button
-                  key={opt.key}
+                  key={goal.goalType}
                   ref={(el) => {
                     optionRefs.current[i] = el;
                   }}
                   type="button"
                   role="radio"
-                  aria-checked={selected}
-                  tabIndex={selected || (choice === null && i === 0) ? 0 : -1}
-                  onClick={() => setChoice(opt.key)}
+                  aria-checked={isSelected}
+                  tabIndex={isSelected || (selected === null && i === 0) ? 0 : -1}
+                  onClick={() => setChoice(goal.goalType)}
                   onKeyDown={(e) => onOptionKeyDown(e, i)}
                   className={`flex flex-col items-start gap-1 rounded-2xl border bg-white p-4 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
-                    selected ? "border-foreground ring-2 ring-foreground" : "border-foreground/15 hover:border-foreground/40"
+                    isSelected ? "border-foreground ring-2 ring-foreground" : "border-foreground/15 hover:border-foreground/40"
                   }`}
                 >
-                  <span className="font-heading text-base font-semibold">{opt.label}</span>
-                  <span className="text-sm text-foreground/70">{opt.reason}</span>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-heading text-base font-semibold">{goal.label}</span>
+                    {goal.goalType === recommended && (
+                      <span className="rounded-full bg-foreground px-2 py-0.5 text-xs font-medium text-background">
+                        Recommended
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-sm text-foreground/70">{goal.reason}</span>
+                  <span className="text-xs text-foreground/60">Next in Ploy: {primitive}</span>
                 </button>
               );
             })}
           </div>
-
-          {choice === "custom" && (
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="custom-goal">Describe your goal</Label>
-              <Input
-                id="custom-goal"
-                value={customText}
-                onChange={(e) => setCustomText(e.target.value)}
-                maxLength={300}
-                placeholder="For example: sell more wedding cakes"
-                className="h-11 rounded-full bg-white px-4 text-base"
-              />
-            </div>
-          )}
 
           {submitError && (
             <p role="alert" className="text-sm">

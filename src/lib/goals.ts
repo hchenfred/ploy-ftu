@@ -6,12 +6,8 @@ import type { BrandProfile } from "@/lib/tools/research-site"; // type-only: era
 export const SESSION_STATUSES = ["site", "goal", "building", "live"] as const;
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
-export const GOAL_TYPES = [
-  "local_customers",
-  "capture_and_follow_up",
-  "inbound_leads",
-  "paid_growth",
-] as const;
+// The three starting goals, one per persona. Each ends in one saved artifact (see GOAL_CATALOG).
+export const GOAL_TYPES = ["launch_product", "get_leads", "plan_campaign"] as const;
 export type GoalType = (typeof GOAL_TYPES)[number];
 
 // `source` is set by the server, never by the model:
@@ -23,23 +19,61 @@ export type SuggestedGoal = {
   source: "model" | "default";
 };
 
-// Fallback and label source for default goals (and the filler when the model returns fewer than 4 types).
+// Fallback and label source for default goals (and the filler when the model returns fewer than 3 types).
 export const DEFAULT_GOALS: Record<GoalType, { label: string; reason: string }> = {
-  local_customers: {
-    label: "Get more local customers",
-    reason: "Helps people nearby find you and visit, call or book.",
+  launch_product: {
+    label: "Launch my product with a great ad",
+    reason: "Turns a photo of your product into a branded ad you can run.",
   },
-  capture_and_follow_up: {
-    label: "Capture and follow up with visitors",
-    reason: "Collects visitors' contact details so you can follow up with them.",
+  get_leads: {
+    label: "Get leads for my service",
+    reason: "A landing page with a clear quote-request button.",
   },
-  inbound_leads: {
-    label: "Get more inbound leads",
-    reason: "Makes it easy for people to ask for a quote or a consultation.",
+  plan_campaign: {
+    label: "Plan a marketing campaign",
+    reason: "A step-by-step plan with tasks and a success metric.",
   },
-  paid_growth: {
-    label: "Grow with paid ads",
-    reason: "Gives paid ad traffic a page built to convert.",
+};
+
+// The Ploy primitives a goal hands the user to. Our data: the model never decides it.
+export type Primitive = "ads" | "sites" | "ploybooks";
+export const PRIMITIVE_LABELS: Record<Primitive, string> = { ads: "Ads", sites: "Sites", ploybooks: "Ploybooks" };
+
+// What each goal produces and where Ploy takes the user next. The hrefs are PLACEHOLDERS (fake links, not
+// real Ploy URLs), kept in this one table so they are easy to replace.
+export const GOAL_CATALOG: Record<
+  GoalType,
+  {
+    artifactType: "ad_creative" | "page" | "playbook";
+    handoff: { primitive: Primitive; title: string; text: string; href: string };
+  }
+> = {
+  launch_product: {
+    artifactType: "ad_creative",
+    handoff: {
+      primitive: "ads",
+      title: "Run it in Ploy Ads",
+      text: "Take this creative to Ploy Ads and test it with real traffic.",
+      href: "https://example.com/ploy/ads",
+    },
+  },
+  get_leads: {
+    artifactType: "page",
+    handoff: {
+      primitive: "sites",
+      title: "Publish it with Ploy Sites",
+      text: "Publish this page on your own domain and start collecting requests.",
+      href: "https://example.com/ploy/sites",
+    },
+  },
+  plan_campaign: {
+    artifactType: "playbook",
+    handoff: {
+      primitive: "ploybooks",
+      title: "Save it as a Ploybook",
+      text: "Turn this plan into a repeatable Ploybook and track its metric in analytics.",
+      href: "https://example.com/ploy/ploybooks",
+    },
   },
 };
 
@@ -48,6 +82,15 @@ export function defaultGoal(goalType: GoalType): SuggestedGoal {
 }
 
 export const ALL_DEFAULT_GOALS: SuggestedGoal[] = GOAL_TYPES.map(defaultGoal);
+
+/**
+ * The recommended goal is the model's first (best-fit) suggestion. There is no recommendation when the first goal
+ * is a default (the model failed or returned nothing usable), so a fallback never pretends to recommend.
+ */
+export function recommendedGoal(goals: ReadonlyArray<SuggestedGoal> | null | undefined): GoalType | null {
+  const first = goals?.[0];
+  return first && first.source === "model" ? first.goalType : null;
+}
 
 // Length limits for the saved text. They are enforced on the server by clip(), NOT in the schema below.
 // A hard maxLength in the schema sent to the model made it squeeze its text to fit and stop mid-phrase
@@ -75,7 +118,7 @@ export function clip(text: string, max: number): string {
 }
 
 // The suggestGoals tool's input schema doubles as the structured output the model fills in.
-// The array is min(1), not min(4), on purpose: a partial answer from a weak model is rescued by
+// The array is min(1), not min(3), on purpose: a partial answer from a weak model is rescued by
 // normalizeGoals instead of failing validation and discarding a good summary.
 export const suggestGoalsInput = z.object({
   summary: z.string().min(10).describe("One short sentence: who they are and who they sell to"),
@@ -94,19 +137,21 @@ export const suggestGoalsInput = z.object({
       }),
     )
     .min(1)
-    .max(4)
-    .describe("All four goal types, one each, most relevant first"),
+    .max(3)
+    .describe("All three goal types, one each, the best fit for this business first"),
 });
 export type SuggestGoalsInput = z.infer<typeof suggestGoalsInput>;
 
 // Body of POST /api/goals/choose. The client never sends a label: the server reads it from the DB.
-export const chooseGoalBody = z.discriminatedUnion("kind", [
-  z.object({ sessionId: z.uuid(), kind: z.literal("suggested"), goalType: z.enum(GOAL_TYPES) }),
-  z.object({ sessionId: z.uuid(), kind: z.literal("custom"), customText: z.string().trim().min(3).max(300) }),
-]);
+// (Only suggested goals can be chosen in the MVP; there is no custom goal.)
+export const chooseGoalBody = z.object({
+  sessionId: z.uuid(),
+  kind: z.literal("suggested"),
+  goalType: z.enum(GOAL_TYPES),
+});
 
 /**
- * Turn the model's goals into exactly four: one per goal type.
+ * Turn the model's goals into exactly three: one per goal type.
  * - trim strings, drop unknown types and empty entries
  * - dedupe by goalType, keeping the first (preserves the model's relevance order), tagged "model"
  * - fill every missing type from DEFAULT_GOALS, appended in GOAL_TYPES order, tagged "default"
@@ -155,5 +200,5 @@ export type SessionState = {
     description: string | null; // content.description (describe path)
     suggestedGoals: SuggestedGoal[] | null;
   };
-  goal: null | { goalType: GoalType | null; label: string; customText: string | null };
+  goal: null | { goalType: GoalType; label: string };
 };

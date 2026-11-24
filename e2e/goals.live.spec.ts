@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { GOAL_TYPES } from "../src/lib/goals";
-import { db, goals4, seedSession, sessionIdOf, STARTER_PROFILE } from "./helpers";
+import { db, goals3, seedSession, sessionIdOf, STARTER_PROFILE } from "./helpers";
 
 // Milestone 2 against the real server, database and (in the last three tests) the real model and Firecrawl.
 // The free model allows ~5 requests/min, so only tests tagged "llm" spend any, and each pauses 30 s afterwards.
@@ -30,53 +30,57 @@ test("AC-21/35: status codes and guards, through the real routes", async ({ requ
   const created = await (await request.post("/api/sessions")).json();
   const id = created.sessionId as string;
   expect((await request.post("/api/goals/suggest", { data: { sessionId: id } })).status()).toBe(409);
-  expect((await request.post("/api/goals/choose", { data: { sessionId: id, kind: "custom", customText: "a goal" } })).status()).toBe(409);
+  expect((await request.post("/api/goals/choose", { data: { sessionId: id, kind: "suggested", goalType: "get_leads" } })).status()).toBe(409);
   const state = await (await request.get(`/api/sessions/${id}`)).json();
   expect(state).toEqual({ status: "site", profile: null, goal: null });
   expect(JSON.stringify(state)).not.toContain("digest");
 });
 
 test("AC-20/27/28/30: saved suggestions show with no model request; choosing saves the server's label", async ({ page }) => {
-  const suggestions = goals4();
+  const suggestions = goals3();
   const id = await seedSession(page, { status: "goal", profile: { ...STARTER_PROFILE, summary: "A bakery." }, suggestedGoals: suggestions });
   const suggest = countSuggest(page);
 
   await page.goto("/");
-  await expect(radios(page)).toHaveCount(5);
+  await expect(radios(page)).toHaveCount(3);
   await expect(step(page)).toContainText("Your goal");
   await page.reload();
-  await expect(radios(page)).toHaveCount(5);
+  await expect(radios(page)).toHaveCount(3);
   expect(suggest.n).toBe(0);
   expect((await eventsOf(id)).some((e) => e.name === "goals_suggested")).toBe(false);
 
-  await page.getByRole("radio", { name: /Label for local_customers/ }).click();
+  await expect(radios(page).first()).toHaveAttribute("aria-checked", "true"); // the recommendation is pre-selected
+  await page.getByRole("radio", { name: /Label for plan_campaign/ }).click();
   await cont(page).click();
   await expect(saved(page)).toBeVisible();
   await expect(step(page)).toContainText("First win");
   await expect(page.getByText("Coming soon")).toBeVisible();
 
   const row = await one<Record<string, unknown>>("sessions", `id=eq.${id}&select=status,goal_type,goal_label,goal_custom_text`);
-  expect(row).toEqual({ status: "building", goal_type: "local_customers", goal_label: "Label for local_customers", goal_custom_text: null });
+  expect(row).toEqual({ status: "building", goal_type: "plan_campaign", goal_label: "Label for plan_campaign", goal_custom_text: null });
   const ev = await eventsOf(id);
-  expect(ev.find((e) => e.name === "goal_chosen")?.props).toMatchObject({ goalType: "local_customers", custom: false, source: "model" });
+  expect(ev.find((e) => e.name === "goal_chosen")?.props).toMatchObject({ goalType: "plan_campaign", recommended: "get_leads", followed: false, source: "model" });
   expect(ev.some((e) => e.name === "step_changed" && e.props.from === "goal" && e.props.to === "building")).toBe(true);
   expect(await db("artifacts", `session_id=eq.${id}&select=id`)).toHaveLength(0); // M2 builds no page
   await page.reload();
   await expect(saved(page)).toBeVisible(); // refresh at "building" resumes the end screen
 });
 
-test("AC-29: a custom goal stores its text with no goal type", async ({ page }) => {
-  const id = await seedSession(page, { status: "goal", profile: STARTER_PROFILE, suggestedGoals: goals4() });
+test("AC-44: confirming the pre-selected recommendation saves it and logs followed: true", async ({ page }) => {
+  const id = await seedSession(page, { status: "goal", profile: STARTER_PROFILE, suggestedGoals: goals3() });
   await page.goto("/");
-  await page.getByRole("radio", { name: /Something else/ }).click();
-  await page.getByLabel("Describe your goal").fill("  sell more wedding cakes  ");
+  await expect(radios(page).first()).toHaveAttribute("aria-checked", "true");
   await cont(page).click();
   await expect(saved(page)).toBeVisible();
-  expect(await one("sessions", `id=eq.${id}&select=status,goal_type,goal_label,goal_custom_text`)).toEqual({
+  expect(await one("sessions", `id=eq.${id}&select=status,goal_type,goal_label`)).toEqual({
     status: "building",
-    goal_type: null,
-    goal_label: "Custom goal",
-    goal_custom_text: "sell more wedding cakes",
+    goal_type: "get_leads",
+    goal_label: "Label for get_leads",
+  });
+  expect((await eventsOf(id)).find((e) => e.name === "goal_chosen")?.props).toMatchObject({
+    goalType: "get_leads",
+    recommended: "get_leads",
+    followed: true,
   });
 });
 
@@ -84,14 +88,14 @@ test("AC-31: 'Change my goal' clears the goal, keeps the cards and spends no mod
   const id = await seedSession(page, {
     status: "building",
     profile: STARTER_PROFILE,
-    suggestedGoals: goals4(),
-    goal: { goal_type: "paid_growth", goal_label: "Label for paid_growth" },
+    suggestedGoals: goals3(),
+    goal: { goal_type: "plan_campaign", goal_label: "Label for plan_campaign" },
   });
   const suggest = countSuggest(page);
   await page.goto("/");
   await expect(saved(page)).toBeVisible();
   await page.getByRole("button", { name: "Change my goal" }).click();
-  await expect(radios(page)).toHaveCount(5);
+  await expect(radios(page)).toHaveCount(3);
   expect(suggest.n).toBe(0);
   expect(await one("sessions", `id=eq.${id}&select=status,goal_type,goal_label,goal_custom_text`)).toEqual({
     status: "goal",
@@ -99,13 +103,13 @@ test("AC-31: 'Change my goal' clears the goal, keeps the cards and spends no mod
     goal_label: null,
     goal_custom_text: null,
   });
-  expect((await one<{ suggested_goals: unknown[] }>("business_profiles", `session_id=eq.${id}&select=suggested_goals`)).suggested_goals).toHaveLength(4);
+  expect((await one<{ suggested_goals: unknown[] }>("business_profiles", `session_id=eq.${id}&select=suggested_goals`)).suggested_goals).toHaveLength(3);
 });
 
 test("AC-36: 'Use a different website' from step 2 clears the suggestions on the server", async ({ page }) => {
-  const id = await seedSession(page, { status: "goal", profile: { ...STARTER_PROFILE, summary: "A bakery." }, suggestedGoals: goals4() });
+  const id = await seedSession(page, { status: "goal", profile: { ...STARTER_PROFILE, summary: "A bakery." }, suggestedGoals: goals3() });
   await page.goto("/");
-  await expect(radios(page)).toHaveCount(5);
+  await expect(radios(page)).toHaveCount(3);
   await page.getByRole("button", { name: "Use a different website" }).click();
   await expect(page.getByLabel("Website URL")).toBeVisible();
   await expect(step(page)).toContainText("Your site");
@@ -116,8 +120,8 @@ test("AC-36: 'Use a different website' from step 2 clears the suggestions on the
 });
 
 test("AC-35: choosing a goal that was not offered is rejected and changes nothing", async ({ page, request }) => {
-  const id = await seedSession(page, { status: "goal", profile: STARTER_PROFILE, suggestedGoals: goals4().slice(0, 2) }); // only 2 offered
-  const res = await request.post("/api/goals/choose", { data: { sessionId: id, kind: "suggested", goalType: "paid_growth" } });
+  const id = await seedSession(page, { status: "goal", profile: STARTER_PROFILE, suggestedGoals: goals3().slice(0, 2) }); // only 2 offered
+  const res = await request.post("/api/goals/choose", { data: { sessionId: id, kind: "suggested", goalType: "plan_campaign" } });
   expect(res.status()).toBe(400);
   expect(await one("sessions", `id=eq.${id}&select=status,goal_label`)).toEqual({ status: "goal", goal_label: null });
 });

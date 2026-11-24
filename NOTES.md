@@ -383,3 +383,17 @@ New spec: **`SPEC-M3.md`** (rewritten in place).
 - **Alternative for a later iteration:** a signed direct upload to Supabase Storage allows large originals and keeps
   the bytes off our function, at the price of validating after upload and handling cleanup of rejected files.
 
+## Milestone 3, step 1 (three goals) built and verified locally (2026-11-23)
+- Done: `0003_artifacts.sql` (applied by the human; verified through the API: new goal types accepted, old ones
+  rejected with 23514, `playbook` artifact type accepted, `saved_at` exists, a second artifact per session rejected with
+  23505, no old goal data left); `goals.ts` with three goals, a hand-off catalog (placeholder `example.com` links) and
+  `recommendedGoal()`; new `GOALS_PROMPT`; `choose` route takes only the three goals and logs `recommended` / `followed`;
+  `GoalStep` with three cards, a "Recommended" badge and a pre-selected recommendation, "Next in Ploy: X" on each card;
+  `npm run test:unit` (Node's runner, 9 tests) plus `allowImportingTsExtensions` in tsconfig so unit tests can import
+  `.ts` files directly.
+- Tests: mocked 35/35 (26 goal-step + 9 M1), unit 9/9, lint and production build clean.
+- A live test failed once on a stale number (it still expected 4 saved suggestions); fixed, not an app bug.
+- **Deploy order matters:** the database is migrated before the new code ships, so production's old four-goal step is
+  degraded until the new code is deployed (the old choose route is rejected by the new constraint). Pushing right
+  after local verification keeps that window short.
+

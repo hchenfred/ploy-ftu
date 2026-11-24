@@ -100,9 +100,9 @@ export const sessionIdOf = (page: Page) => page.evaluate(() => localStorage.getI
 
 export const FAKE_ID = "11111111-1111-4111-8111-111111111111";
 
-/** Four goals, one per type. The last `filled` are default-filled (source "default"). */
-export function goals4(filled = 0): SuggestedGoal[] {
-  const order: GoalType[] = ["inbound_leads", "local_customers", "capture_and_follow_up", "paid_growth"];
+/** Three goals, one per type, best fit first (the first is the recommendation). The last `filled` are default-filled. */
+export function goals3(filled = 0): SuggestedGoal[] {
+  const order: GoalType[] = ["get_leads", "launch_product", "plan_campaign"];
   return order.map((goalType, i) => ({
     goalType,
     label: `Label for ${goalType}`,
@@ -111,7 +111,7 @@ export function goals4(filled = 0): SuggestedGoal[] {
   }));
 }
 
-export const suggestOk = (goals = goals4()): SuggestGoalsResponse => ({
+export const suggestOk = (goals = goals3()): SuggestGoalsResponse => ({
   ok: true,
   source: "model",
   summary: "A San Francisco bakery selling to locals.",
@@ -184,15 +184,11 @@ export async function fakeBackend(page: Page, init: FakeInit = {}) {
     log.choose.push(body);
     if (init.chooseFails) return route.fulfill({ status: 500, json: { error: "x" } });
     if (state.status !== "goal") return route.fulfill({ status: 409, json: { error: "wrong_step" } });
-    if (body.kind === "custom") {
-      state.goal = { goalType: null, label: "Custom goal", customText: String(body.customText).trim() };
-    } else {
-      const goalType = body.goalType as GoalType;
-      const saved = state.profile?.suggestedGoals;
-      const label = saved ? saved.find((g) => g.goalType === goalType)?.label : DEFAULT_GOALS[goalType].label; // never from the client
-      if (!label) return route.fulfill({ status: 400, json: { error: "Unknown goal" } });
-      state.goal = { goalType, label, customText: null };
-    }
+    const goalType = body.goalType as GoalType;
+    const saved = state.profile?.suggestedGoals;
+    const label = saved ? saved.find((g) => g.goalType === goalType)?.label : DEFAULT_GOALS[goalType].label; // never from the client
+    if (!label) return route.fulfill({ status: 400, json: { error: "Unknown goal" } });
+    state.goal = { goalType, label };
     state.status = "building";
     return route.fulfill({ json: { ok: true, goal: state.goal } });
   });
@@ -246,7 +242,7 @@ export async function seedSession(
     status?: "site" | "goal" | "building";
     profile?: { name?: string | null; url?: string | null; content?: Record<string, unknown>; summary?: string | null };
     suggestedGoals?: SuggestedGoal[] | null;
-    goal?: { goal_type: string | null; goal_label: string; goal_custom_text?: string | null };
+    goal?: { goal_type: string; goal_label: string };
   } = {},
 ): Promise<string> {
   const [s] = await dbWrite<{ id: string }>("POST", "sessions", {});

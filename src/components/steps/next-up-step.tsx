@@ -16,7 +16,7 @@ export function NextUpStep({
 }) {
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState(false);
-  const goalText = state.goal?.customText ?? state.goal?.label ?? "";
+  const goalText = state.goal?.label ?? "";
 
   // building -> goal: the server clears the saved goal and keeps the suggestions (no new model request).
   async function changeGoal() {
