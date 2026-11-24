@@ -10,6 +10,9 @@ let server: Server;
 let port = 0;
 let open: ServerResponse | null = null;
 
+// The stub is a plain-http local server, and a browser on an https page cannot be redirected to it: these run against localhost only.
+test.skip(!!process.env.E2E_BASE_URL?.startsWith("https:"), "needs a local http stub server");
+
 test.beforeAll(async () => {
   server = createServer((req, res) => {
     const chat = req.url?.includes("/api/chat");

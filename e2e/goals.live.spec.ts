@@ -33,7 +33,7 @@ test("AC-21/35: status codes and guards, through the real routes", async ({ requ
   expect((await request.post("/api/goals/suggest", { data: { sessionId: id } })).status()).toBe(409);
   expect((await request.post("/api/goals/choose", { data: { sessionId: id, kind: "suggested", goalType: "get_leads" } })).status()).toBe(409);
   const state = await (await request.get(`/api/sessions/${id}`)).json();
-  expect(state).toEqual({ status: "site", profile: null, goal: null });
+  expect(state).toEqual({ status: "site", profile: null, goal: null, photo: null, artifact: null }); // M3 added photo and artifact
   expect(JSON.stringify(state)).not.toContain("digest");
 });
 

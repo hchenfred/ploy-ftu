@@ -196,9 +196,13 @@ test("photo upload: wrong files and wrong steps are refused and nothing is store
     expect(res.status(), name).toBe(400);
     expect(await res.json()).toEqual({ error: "unsupported_type" });
   }
-  const tooBig = await upload(request, id, { name: "big.jpg", mimeType: "image/jpeg", buffer: Buffer.concat([fakeJpeg(), Buffer.alloc(5 * 1024 * 1024)]) });
+  // Just over our 4 MB limit but under Vercel's 4.5 MB request cap, so OUR route answers with its plain message.
+  const tooBig = await upload(request, id, { name: "big.jpg", mimeType: "image/jpeg", buffer: Buffer.concat([fakeJpeg(), Buffer.alloc(4.2 * 1024 * 1024)]) });
   expect(tooBig.status()).toBe(413);
   expect(await tooBig.json()).toEqual({ error: "too_large" });
+  // Over 4.5 MB the platform itself refuses (plain text, not our JSON), so only the status is ours to check. The browser shrinks photos long before this.
+  const huge = await upload(request, id, { name: "huge.jpg", mimeType: "image/jpeg", buffer: Buffer.concat([fakeJpeg(), Buffer.alloc(5 * 1024 * 1024)]) });
+  expect(huge.status()).toBe(413);
 
   const leads = await seedSession(page, { ...building({ goal_type: "get_leads", goal_label: "Get leads for my service" }) });
   expect((await upload(request, leads, { name: "a.jpg", mimeType: "image/jpeg", buffer: fakeJpeg() })).status()).toBe(409); // only the ad takes a photo

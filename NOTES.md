@@ -377,8 +377,8 @@ New spec: **`SPEC-M3.md`** (rewritten in place).
   direct upload lands the file first and can only be checked afterwards and deleted; (2) I was not certain of the exact
   mechanics of Supabase signed upload URLs (raw PUT vs multipart form) and would have had to test it first; (3) no
   browser key is needed, and the app deliberately has none.
-- **What it costs:** a Vercel serverless function accepts only a limited request body (I believe about 4.5 MB; I have
-  not checked the current figure), so the browser must downsize and the server cap is 4 MB; browsers cannot always
+- **What it costs:** a Vercel serverless function accepts only a limited request body (4.5 MB: confirmed on the deployed site in step 7, where
+  a 5 MB upload got Vercel's own plain-text 413 before our route ran), so the browser must downsize and the server cap is 4 MB; browsers cannot always
   decode iPhone HEIC, so those get a "choose a JPEG, PNG or WebP photo" message; image processing happens in the browser.
 - **Alternative for a later iteration:** a signed direct upload to Supabase Storage allows large originals and keeps
   the bytes off our function, at the price of validating after upload and handling cleanup of rejected files.
@@ -650,3 +650,48 @@ Source: `https://ai-gateway.vercel.sh/v1/models` (518 models; no key needed). Th
   model" for a paid model earlier); whether the AI SDK's `reasoning` option reaches the model through the Gateway. A small benchmark (the same page prompt several times per setting: latency
   and whether the answer parses) is the way to find out. Swapping the model is only `MODEL_ID`.
 
+
+## M3 step 7: deployed-URL run (2026-11-24, https://ploy-ftu-pn3w.vercel.app)
+Run in order, one Playwright command at a time, no fal call (`RUN_FAL` not set; the fal test stays skipped).
+
+| Run | Result |
+|---|---|
+| `npm run build`, `npm run lint`, `npm run test:unit` (local) | build ok, lint 0 problems, 51 unit tests pass |
+| Mocked suite, locally | 70 passed |
+| Mocked suite against the deployed URL | 51 passed, 19 skipped (the dev-only fixtures page returns 404 in production by design; the 4 stub-server tests need a local http server) |
+| `onboarding.live` on the deployed URL | 6 of 6 passed (real Firecrawl and model) |
+| `goals.live` on the deployed URL | 9 of 9 passed after fixing one stale assertion (below) |
+| `artifact.live` on the deployed URL | 12 passed, 1 skipped (the fal test); the one failure was fixed (below) |
+
+**Found by the deployed run (all fixed):**
+1. `goals.live` AC-21/35 expected the old session shape; M3 added `photo` and `artifact` to `SessionState`. A stale test, not an app bug.
+2. The photo upload test sent a 5 MB file. On Vercel the platform refuses any body over **4.5 MB** with a plain-text `413 Request Entity Too Large`, before our route runs, so the JSON `too_large` never came. Our limit is 4 MB. The test now checks both zones (4.2 MB gets our JSON; 5 MB gets a 413), and the browser maps any 413 to the "too large" message. Real users are not affected: the browser shrinks photos to a 1,600 px JPEG first.
+3. `.env.example` was missing `FAL_KEY` and `FAL_MODEL_ID` (AC-41). Added, empty.
+4. The streaming-stub tests cannot run against an https URL (a browser page on https cannot be redirected to a local http server); they now skip when `E2E_BASE_URL` is https.
+
+**Acceptance criteria (SPEC-M3 section 14):**
+
+| AC | Status | Evidence |
+|---|---|---|
+| 39 build, lint, unit, M1 and M2 mocked | pass | table above |
+| 40 migration and constraints | pass | through the REST API on a throwaway session: `goal_type = 'paid_growth'` rejected (400), `'get_leads'` accepted (200); artifacts of type `playbook`, `page`, `ad_creative` inserted (201); rows removed. Running 0003 twice was not repeated by me (the file is written as drop-if-exists plus add) |
+| 41 FAL vars, no secrets in the browser | pass | `.env.example` fixed; none of the four secret values found in `.next/static` or in the deployed home page; no `NEXT_PUBLIC_*` variable in the source. `FAL_KEY` in Vercel confirmed by the user (it works). `FAL_MODEL_ID` in Vercel not checked (the code default is used when empty) |
+| 42 to 45 goal step | pass | mocked + `goals.live` (3 cards, recommended pre-selected, fallback defaults, server-side labels, unknown goal rejected with 400) |
+| 46, 47 playbook and page | pass | mocked + `artifact.live`; the user generated a landing page on the deployed site |
+| 48 ad with a photo | partly | upload, wrong files, replace and cleanup pass live; the first real fal call was recorded earlier in NOTES; the user confirmed `FAL_KEY` works on the deployed site; the live fal test was deliberately not run (credit) |
+| 49 to 51 text-only card, headline, fallback | pass | mocked + unit |
+| 52 regenerate cap, busy, stale write | pass | mocked + `artifact.live` |
+| 53, 54 save, hand-off | pass | mocked + `artifact.live` |
+| 55 activation query | partly | the events exist and carry `secondsSinceStart` (7 saved runs from the tests, median 4 s, not real usage); the SQL file itself was not run by me: paste `supabase/queries/activation.sql` into the Supabase SQL editor |
+| 56, 57 resume, change goal | pass | mocked + `artifact.live` |
+| 58 to 60 failures, earlier guarantees, hostile content | pass | mocked + unit |
+| 61 explainability | for the human | not testable |
+
+**Still open:** the headline and fidelity check on real product photos (3 correct headlines so far; the spec asks for 5), the activation SQL in the editor, and the free-model benchmark.
+
+## Streaming the goal cards: investigated, not built (2026-11-24)
+A read-only agent looked at it on request. It is feasible (`streamText` + `Output.object` + `useObject`, saved before the response closes, like the artifact route), about 200 to 300 lines plus test rewrites.
+- **No visible gain with today's model:** the free reasoning model thinks silently and sends the whole answer at once, so the three cards would still appear together after the same wait. A model that really streams would show them over 2 to 5 s.
+- **Real risks:** cards shown before the server cleans, clips and de-duplicates them could change or vanish; the "Recommended" badge depends on the first goal; the choose route reads the SAVED suggestions, so a click before the save would fail or log the default; raw JSON in half-finished strings; a failure midway after cards were shown.
+- **Decision:** not now. If a streaming model is adopted: show only complete cards, disable choosing until the stream ends and the saved list is read back, swap to the saved list at the end. Cheaper now: skeleton cards and the time-based progress guide from the build screen.
+- **Related finding:** `goals/suggest` still has `maxDuration = 30` and a 25 s model abort, while the artifact route now waits 55 s; a slow free-model run could fall back to the default cards. Not changed yet.

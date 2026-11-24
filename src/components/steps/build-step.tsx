@@ -231,7 +231,8 @@ export function BuildStep({ sessionId, state, onChange }: { sessionId: string; s
       form.set("sessionId", sessionId);
       form.set("file", new File([blob], "photo.jpg", { type: "image/jpeg" }));
       const res = await fetch("/api/uploads/photo", { method: "POST", body: form });
-      if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "failed");
+      // Vercel refuses a body over 4.5 MB with a plain-text 413 before our route runs, so the status counts as well as the JSON error.
+      if (!res.ok) throw new Error(res.status === 413 ? "too_large" : (((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "failed"));
       setThumb(URL.createObjectURL(blob));
       onChange();
     } catch (err) {
