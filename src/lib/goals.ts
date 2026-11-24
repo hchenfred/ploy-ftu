@@ -137,6 +137,12 @@ export function normalizeGoals(
   return { goals, filled };
 }
 
+// What POST /api/goals/suggest returns after its guards (always HTTP 200; a failure is { ok: false }).
+export type SuggestGoalsReason = "no_profile" | "invalid_output" | "rate_limited" | "timeout" | "unknown";
+export type SuggestGoalsResponse =
+  | { ok: true; source: "model" | "saved"; summary: string; goals: SuggestedGoal[] }
+  | { ok: false; reason: SuggestGoalsReason };
+
 // What GET /api/sessions/[id] returns: everything the UI needs to know which step to show.
 // Never contains the scraped page digest (the UI doesn't need it).
 export type SessionState = {

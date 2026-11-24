@@ -111,6 +111,13 @@ Running log of decisions, places where I overrode the coding agent, and problems
   never ends on a dangling and/for/to). Verified: unit tests for `clip` + 3 live calls on different businesses, 12
   of 12 labels and reasons complete (30-43 chars). Deviates from the spec's original schema; SPEC-M2 updated.
 - **Goal-step quality on the free model is best effort**: expect default-filled goals and the fallback to appear.
+- **M2 step 5 (choose + goal screen):** `POST /api/goals/choose` looks the label up on the server (the browser
+  sends only a goal type or custom text, and a stray `label` field is ignored), rejects a type we did not offer
+  (400) and any call outside the `goal` step (409), and the goal columns are written with `where status = 'goal'`
+  so a stale tab cannot overwrite a saved goal. `GoalStep` shares one in-flight suggestions request per session
+  (Strict Mode would otherwise spend two model requests) and falls back to the four default goals on any failure,
+  with a "Try again". Cards are a keyboard-friendly radiogroup (arrows move and select, Enter submits).
+  Known edge: after taking the fallback defaults nothing was saved, so "Change my goal" asks the model again.
 - (add yours here)
 
 ### Backend test results (2026-11-23, local, via curl; no UI yet)

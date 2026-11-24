@@ -61,7 +61,9 @@ export default function Home() {
         <>
           {state.status === "site" && <SiteStep sessionId={sessionId} onDone={refresh} />}
           {state.status === "goal" && <GoalStep sessionId={sessionId} state={state} onChange={refresh} />}
-          {(state.status === "building" || state.status === "live") && <NextUpStep state={state} />}
+          {(state.status === "building" || state.status === "live") && (
+            <NextUpStep sessionId={sessionId} state={state} onChange={refresh} />
+          )}
         </>
       )}
     </main>

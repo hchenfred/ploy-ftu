@@ -3,7 +3,7 @@ import { z } from "zod";
 import { buildGoalTools } from "@/lib/agent";
 import { isRateLimitError, isTimeoutError } from "@/lib/ai-errors";
 import { logEvent } from "@/lib/events";
-import type { SuggestedGoal } from "@/lib/goals";
+import type { SuggestGoalsReason, SuggestGoalsResponse } from "@/lib/goals";
 import { GOALS_PROMPT } from "@/lib/prompts";
 import { loadSessionState } from "@/lib/session-state";
 import { buildGoalsInput, type SuggestGoalsOutput } from "@/lib/tools/suggest-goals";
@@ -12,10 +12,8 @@ export const maxDuration = 30;
 
 const Body = z.object({ sessionId: z.uuid() });
 
-type Reason = "no_profile" | "invalid_output" | "rate_limited" | "timeout" | "unknown";
-type SuggestResponse =
-  | { ok: true; source: "model" | "saved"; summary: string; goals: SuggestedGoal[] }
-  | { ok: false; reason: Reason };
+type Reason = SuggestGoalsReason;
+type SuggestResponse = SuggestGoalsResponse;
 
 // POST /api/goals/suggest: ask the model for goal suggestions for this session's business.
 // Why a route and not the /api/chat agent loop: there is no conversation, the step is deterministic, and
