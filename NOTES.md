@@ -396,4 +396,32 @@ New spec: **`SPEC-M3.md`** (rewritten in place).
 - **Deploy order matters:** the database is migrated before the new code ships, so production's old four-goal step is
   degraded until the new code is deployed (the old choose route is rejected by the new constraint). Pushing right
   after local verification keeps that window short.
+- **Step 1 live results (local server, real database and model):** 9/9 pass after fixing three stale numbers in my own
+  tests (one still expected 4 saved suggestions, two still expected 5 cards; a search-and-replace had missed
+  `toHaveCount(5, { timeout })`). The model returned three complete goals for the bakery with nothing filled from
+  defaults. Pushed as `f336a7f` + `001d07b`.
+- **On production:** probes show the new code is live (`choose` rejects the old `paid_growth` type with 400, accepts
+  `get_leads`, rejects the removed custom kind with 400); mocked suite 35/35 against the deployed URL. The deployed live
+  goal suite has not been run yet. There was a short window where the database was migrated before the new code
+  shipped (the old four-goal step could not save a goal); no real users in that window.
+
+## Milestone 3, step 2 (pure artifact modules) built (2026-11-23)
+- Added `src/lib/artifact/`: `types.ts` (profile, `DeepPartial`, tolerant readers), `theme.ts` (hex parsing, WCAG contrast,
+  `deriveTheme`), `playbook.ts` and `page.ts` (loose model-facing zod schemas, limits, `fallback*`, `validate*`), `ad.ts`
+  (headline rule, fixed image prompt, `sniffImageType`). None import `server-only` or `@/`; they use explicit `.ts`
+  imports so `node --test` can load them. A throwaway page importing them built in the production build, so the app's
+  bundler accepts the explicit extensions.
+- **Design change from the spec:** `validate*` fills missing parts from the deterministic fallback (per section) instead of
+  failing the whole artifact, and returns `{ value, filled }`; `null` only when nothing usable came back. Playbook tasks:
+  the prompt asks for 5 to 7, 3 to 7 are kept (a weak model that returns 3 or 4 is rescued, not rejected).
+- 19 new unit tests (28 total, all pass): hex handling and contrast, headline never invented, image prompt carries only the
+  headline and the accent, magic-byte detection (JPEG, PNG, WebP; GIF, SVG, RIFF-but-not-WebP, HEIC rejected), clipping at
+  word boundaries, partial/garbage model output, hostile text kept as plain text, and a check that the model-facing schemas
+  contain no `maxLength` / `maxItems` / `minLength` / `minItems`.
+- I tightened one test of mine that could not fail (hostile text title): it now asserts the exact result.- **Hardening (human asked "what if the hex is invalid?"):** `buildImagePrompt` used to paste the accent into the prompt for the
+  image model as given (`red`, an empty string or arbitrary text went straight through, and a long headline was not
+  clipped there). It now validates both itself: the accent goes through the new `normalizeAccent` (valid 3 or 6 digit hex,
+  else the ink color) and the headline is cleaned and clipped to 60. 30 unit tests pass. The accent normally comes from
+  the scraped brand colors (hex-filtered in `researchSite`, then chosen by `deriveTheme`); the describe path has no brand
+  so it is always the ink color.
 
