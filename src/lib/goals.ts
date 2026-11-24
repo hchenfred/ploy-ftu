@@ -120,6 +120,27 @@ export function clip(text: string, max: number): string {
   return t;
 }
 
+/**
+ * Remove a fragment of the model's own JSON that leaked into a text field (seen in real output: a goal reason that ended with
+ * `},{goalType:`). The text is cut at the first brace, bracket, string boundary (`","`), `":` or the word goalType, then trailing punctuation left by the cut is
+ * dropped. Used only on text the MODEL wrote: never on text the user typed (a headline may contain braces).
+ */
+export function cleanModelText(text: string): string {
+  const leak = text.search(/[{}[\]]|"\s*,\s*"|"\s*:|\bgoalType\b/i);
+  if (leak === -1) return text.trim();
+  return text.slice(0, leak).replace(/["'`\s,;:]+$/, "").trim();
+}
+
+/** A stored suggestion cleaned for display: leaked JSON removed, and an empty label or reason replaced by that goal's default. */
+export function cleanStoredGoal(g: SuggestedGoal): SuggestedGoal {
+  const d = DEFAULT_GOALS[g.goalType];
+  return {
+    ...g,
+    label: clip(cleanModelText(g.label ?? ""), LIMITS.label) || d.label,
+    reason: clip(cleanModelText(g.reason ?? ""), LIMITS.reason) || d.reason,
+  };
+}
+
 // The suggestGoals tool's input schema doubles as the structured output the model fills in.
 // The array is min(1), not min(3), on purpose: a partial answer from a weak model is rescued by
 // normalizeGoals instead of failing validation and discarding a good summary.
@@ -168,8 +189,8 @@ export function normalizeGoals(
 
   for (const g of modelGoals) {
     const type = GOAL_TYPES.find((t) => t === g.goalType);
-    const label = g.label ? clip(g.label, LIMITS.label) : "";
-    const reason = g.reason ? clip(g.reason, LIMITS.reason) : "";
+    const label = g.label ? clip(cleanModelText(g.label), LIMITS.label) : "";
+    const reason = g.reason ? clip(cleanModelText(g.reason), LIMITS.reason) : "";
     if (!type || !label || !reason || seen.has(type)) continue;
     seen.add(type);
     goals.push({ goalType: type, label, reason, source: "model" });

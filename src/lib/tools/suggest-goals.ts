@@ -2,7 +2,7 @@ import "server-only";
 import { tool } from "ai";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { logEvent } from "@/lib/events";
-import { clip, LIMITS, normalizeGoals, suggestGoalsInput, type SuggestedGoal } from "@/lib/goals";
+import { clip, cleanModelText, LIMITS, normalizeGoals, suggestGoalsInput, type SuggestedGoal } from "@/lib/goals";
 
 const DIGEST_CHARS = 3_000;
 
@@ -74,7 +74,7 @@ export function suggestGoalsTool(sessionId: string) {
         const normalized = normalizeGoals(modelGoals);
         if (!normalized) return fail("invalid_output");
 
-        const cleanSummary = clip(summary, LIMITS.summary);
+        const cleanSummary = clip(cleanModelText(summary), LIMITS.summary);
         const { error } = await supabaseAdmin()
           .from("business_profiles")
           .update({

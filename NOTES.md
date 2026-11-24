@@ -564,3 +564,18 @@ Two things to know about this model, both seen in real runs on 2026-11-23, plus 
   photo (the headline-spelling and product-fidelity check, still 2 results on test photos).
 - Known gap: a generation that dies mid-way leaves a claim for 60 s that counts toward the cap of 3.
 
+## Bug found by the human's manual test of the deployed app (2026-11-23): raw JSON in a goal card
+- **Symptom:** a goal card showed "Customers love visual appeal of baked goods.},{goalType:" (a screenshot from the deployed site): the model's own JSON syntax
+  leaked into the `reason` text. Root cause: the free model sometimes writes a malformed tool argument, so the tail of its JSON ended up inside a string
+  field; our `clip()` only shortens text and never looked for it. The same could happen in any model-written field (summary, page copy, playbook tasks).
+- **Fix:** `cleanModelText()` cuts a model-written string at the first brace, bracket, string boundary (`","`), `":` or the word `goalType`, then drops the
+  punctuation left by the cut. It runs in `normalizeGoals`, on the goals summary, and inside `asString` (the single reader of model text in the page and
+  playbook validators), and **never on text the user typed** (an ad headline may contain braces). An entry that is nothing but a leak is dropped and filled
+  from the default. Suggestions already stored before the fix are cleaned when read (`cleanStoredGoal`, and the summary), so the human's existing session
+  needed no data change.
+- **Tests:** 4 new unit tests (the exact string from the app, string-boundary and bracket variants, possessives and "goal type" left alone, leaks in page and
+  playbook fields, user headlines untouched) and a live test that seeds the dirty suggestion and checks the API, the suggest route's saved answer and the card.
+  A first version of that test failed because its regex matched the normal `},{` between two objects in a JSON array: a test bug, fixed.
+- **Lesson:** the unit and live tests all used well-formed model output, so none could catch this. Real manual testing found it: keep manual runs of the
+  deployed app in the plan. A weak model's malformed output is now the second case after wrong key names; both are handled at the point where model text enters.
+

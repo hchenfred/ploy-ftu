@@ -104,6 +104,7 @@ export async function POST(req: Request) {
 
     if (photoPath && !cfg) {
       reason = "not_configured";
+      detail = "FAL_KEY is not set in this environment"; // recorded in the event log so a missing deployment variable is easy to spot (never the key itself)
     } else if (photoPath && cfg) {
       const referenceUrl = await signedAssetUrl(photoPath, 600); // fal gets a short-lived link to OUR copy, never a public file
       if (!referenceUrl) {

@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-server";
 import { logEvent } from "@/lib/events";
 import { getArtifact } from "@/lib/artifact-store";
 import { signedAssetUrl } from "@/lib/artifact-storage";
-import type { SessionState, SessionStatus, SuggestedGoal } from "@/lib/goals";
+import { cleanModelText, cleanStoredGoal, type SessionState, type SessionStatus, type SuggestedGoal } from "@/lib/goals";
 
 /**
  * Move a session from one step to another. The server decides every transition; the client and the
@@ -91,10 +91,11 @@ export async function loadSessionState(sessionId: string): Promise<LoadResult> {
           ? {
               name: profile.name ?? null,
               domain: domainOf(profile.url),
-              summary: profile.summary ?? null,
+              summary: profile.summary ? cleanModelText(profile.summary) || null : null,
               brand: profile.brand ?? {},
               description: profile.content?.description ?? null,
-              suggestedGoals: (profile.suggested_goals as SuggestedGoal[] | null) ?? null,
+              // suggestions saved before the leak was fixed are cleaned on the way out
+              suggestedGoals: (profile.suggested_goals as SuggestedGoal[] | null)?.map(cleanStoredGoal) ?? null,
             }
           : null,
         goal,

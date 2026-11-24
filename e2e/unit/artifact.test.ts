@@ -370,3 +370,17 @@ test("validatePage and validatePlaybook accept common synonyms for keys", () => 
   assert.equal(pb.value.tasks[0].when, "W1");
   assert.equal(pb.value.successMetric.name, "Replies");
 });
+
+test("leaked JSON in model text is removed by the page and playbook validators too, but user text is never touched", () => {
+  const page = goodPage();
+  page.hero.subhead = "Baked every morning.},{title:";
+  page.benefits[1].text = 'Standing orders arrive early","text":"x"';
+  const rp = validatePage(page, profile())!;
+  assert.equal(rp.value.hero.subhead, "Baked every morning.");
+  assert.equal(rp.value.benefits[1].text, "Standing orders arrive early");
+  const pb = goodPlaybook();
+  pb.tasks[0].detail = "Build a spreadsheet of cafes.}],";
+  assert.equal(validatePlaybook(pb, profile())!.value.tasks[0].detail, "Build a spreadsheet of cafes.");
+  // the ad headline is the user's own text: braces stay
+  assert.equal(buildAdHeadline("{Big} sale", "x"), "{Big} sale");
+});

@@ -5,6 +5,8 @@ import {
   ALL_DEFAULT_GOALS,
   chooseGoalBody,
   clip,
+  cleanModelText,
+  cleanStoredGoal,
   DEFAULT_GOALS,
   GOAL_CATALOG,
   GOAL_TYPES,
@@ -109,4 +111,40 @@ test("suggestGoalsInput: accepts a partial answer (rescued by normalizeGoals), r
   assert.ok(!suggestGoalsInput.safeParse({ ...base, goals: [g("paid_growth")] }).success);
   // no hard length limit in the model-facing schema (clip handles it)
   assert.ok(suggestGoalsInput.safeParse({ ...base, goals: [g("get_leads", "x".repeat(200), "y".repeat(400))] }).success);
+});
+
+// ---------- a fragment of the model's own JSON leaked into a goal card (seen in the real app) ----------
+test("cleanModelText removes a leaked JSON fragment, including the exact one from the app", () => {
+  assert.equal(cleanModelText("Customers love visual appeal of baked goods.},{goalType:"), "Customers love visual appeal of baked goods.");
+  assert.equal(cleanModelText('A good fit for cafes","goalType":"get_leads"'), "A good fit for cafes");
+  assert.equal(cleanModelText("Great sourdough [and more"), "Great sourdough");
+  assert.equal(cleanModelText("}{"), "");
+  assert.equal(cleanModelText("  A normal sentence, with punctuation.  "), "A normal sentence, with punctuation.");
+  assert.equal(cleanModelText("The customers' favourite"), "The customers' favourite"); // a possessive is not damaged
+  assert.equal(cleanModelText("Pick your goal type here"), "Pick your goal type here"); // "goal type" with a space is ordinary text
+});
+
+test("normalizeGoals cleans leaked JSON; an entry that is nothing but a leak is dropped and filled from the default", () => {
+  const r = normalizeGoals([
+    g("launch_product", "Showcase handcrafted pastries in ads", "Customers love visual appeal of baked goods.},{goalType:"),
+    g("get_leads", "{goalType: get_leads}", "}{"),
+  ])!;
+  assert.equal(r.goals[0].reason, "Customers love visual appeal of baked goods.");
+  assert.equal(r.goals[0].label, "Showcase handcrafted pastries in ads");
+  assert.equal(r.goals.find((x) => x.goalType === "get_leads")!.source, "default"); // nothing usable left: the default card
+  assert.equal(r.goals.length, 3);
+});
+
+test("cleanStoredGoal cleans a suggestion saved before the fix, falling back to the default text when nothing is left", () => {
+  const dirty: SuggestedGoal = {
+    goalType: "launch_product",
+    label: "Showcase handcrafted pastries in ads",
+    reason: "Customers love visual appeal of baked goods.},{goalType:",
+    source: "model",
+  };
+  assert.deepEqual(cleanStoredGoal(dirty), { ...dirty, reason: "Customers love visual appeal of baked goods." });
+  const empty = cleanStoredGoal({ ...dirty, label: "{", reason: "[" });
+  assert.equal(empty.label, DEFAULT_GOALS.launch_product.label);
+  assert.equal(empty.reason, DEFAULT_GOALS.launch_product.reason);
+  assert.equal(empty.source, "model"); // the source is untouched
 });

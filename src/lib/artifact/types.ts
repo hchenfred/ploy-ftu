@@ -1,3 +1,5 @@
+import { cleanModelText } from "../goals.ts";
+
 // Shared, pure types for the artifact modules. No server-only code and no `@/` imports, so Node's test runner can
 // load these files directly (they import each other with explicit `.ts` extensions).
 
@@ -29,7 +31,8 @@ export type Validated<T> = { value: T; filled: number };
 export const asObject = (v: unknown): Record<string, unknown> | null =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 export const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
-export const asString = (v: unknown): string => (typeof v === "string" ? v : "");
+// Used only to read what the MODEL wrote, so it also removes a leaked fragment of the model's own JSON (see cleanModelText).
+export const asString = (v: unknown): string => (typeof v === "string" ? cleanModelText(v) : "");
 
 // --- tolerant key lookup: a weak model may answer with its own capitalisation or a synonym ("Title", "Tasks", "Timing") ---
 const canon = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, "");

@@ -127,6 +127,25 @@ test("AC-35: choosing a goal that was not offered is rejected and changes nothin
   expect(await one("sessions", `id=eq.${id}&select=status,goal_label`)).toEqual({ status: "goal", goal_label: null });
 });
 
+test("suggestions saved with a leaked JSON fragment are shown, offered again and saved clean", async ({ page, request }) => {
+  const dirty = goals3().map((g) =>
+    g.goalType === "launch_product" ? { ...g, reason: "Customers love visual appeal of baked goods.},{goalType:" } : g,
+  );
+  const id = await seedSession(page, { status: "goal", profile: { ...STARTER_PROFILE, summary: "A bakery.}," }, suggestedGoals: dirty });
+  const state = (await (await request.get(`/api/sessions/${id}`)).json()) as { profile: { summary: string; suggestedGoals: { goalType: string; reason: string }[] } };
+  expect(state.profile.summary).toBe("A bakery.");
+  expect(state.profile.suggestedGoals.find((g) => g.goalType === "launch_product")!.reason).toBe("Customers love visual appeal of baked goods.");
+  expect(JSON.stringify(state)).not.toContain("goods.},{goalType:"); // the leaked fragment is gone ("},{" alone is just two objects in an array)
+
+  const again = (await (await request.post("/api/goals/suggest", { data: { sessionId: id } })).json()) as { source: string; goals: { reason: string }[] };
+  expect(again.source).toBe("saved");
+  expect(JSON.stringify(again)).not.toContain("goods.},{goalType:");
+
+  await page.goto("/");
+  await expect(page.getByText("Customers love visual appeal of baked goods.", { exact: true })).toBeVisible();
+  await expect(page.getByText(/goalType/)).toHaveCount(0); // what the user sees in the card
+});
+
 // --- model tests (each spends real requests) -------------------------------------------------------------
 
 test("AC-26: a seeded starterbakery.com profile gets exactly 3 goals from the real model (or the labeled fallback)", async ({ page }) => {
