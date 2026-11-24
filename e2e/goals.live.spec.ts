@@ -128,12 +128,12 @@ test("AC-35: choosing a goal that was not offered is rejected and changes nothin
 
 // --- model tests (each spends real requests) -------------------------------------------------------------
 
-test("AC-26: a seeded starterbakery.com profile gets exactly 4 goals from the real model (or the labeled fallback)", async ({ page }) => {
+test("AC-26: a seeded starterbakery.com profile gets exactly 3 goals from the real model (or the labeled fallback)", async ({ page }) => {
   test.info().annotations.push({ type: "llm", description: "1 model request" });
   const id = await seedSession(page, { status: "goal", profile: STARTER_PROFILE });
   await page.goto("/");
   await expect(page.getByText(/Finding the best goals for Starter Bakery/)).toBeVisible({ timeout: 2_000 });
-  await expect(radios(page)).toHaveCount(5, { timeout: 35_000 });
+  await expect(radios(page)).toHaveCount(3, { timeout: 35_000 });
 
   const failed = await page.getByText("We couldn't tailor suggestions").isVisible();
   test.info().annotations.push({ type: "result", description: failed ? "fallback (model failed)" : "model goals" });
@@ -195,7 +195,7 @@ test("AC-22: full run: research -> Continue -> goals -> choose -> end state", as
   await new Promise((r) => setTimeout(r, 20_000)); // keep both calls inside the free model's rate limit
   await cont(page).click();
   await expect(step(page)).toContainText("Your goal");
-  await expect(radios(page)).toHaveCount(5, { timeout: 35_000 });
+  await expect(radios(page)).toHaveCount(3, { timeout: 35_000 });
 
   await radios(page).first().click();
   await cont(page).click();
