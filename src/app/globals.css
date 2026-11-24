@@ -127,4 +127,17 @@
   html {
     @apply font-sans;
   }
+  /* Tailwind 4 no longer gives buttons a pointer cursor, so say it once here for everything clickable. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="radio"],
+  a[href],
+  label[for],
+  summary {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
 }
