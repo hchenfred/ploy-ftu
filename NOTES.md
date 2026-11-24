@@ -687,7 +687,10 @@ Run in order, one Playwright command at a time, no fal call (`RUN_FAL` not set; 
 | 58 to 60 failures, earlier guarantees, hostile content | pass | mocked + unit |
 | 61 explainability | for the human | not testable |
 
-**Still open:** the headline and fidelity check on real product photos (3 correct headlines so far; the spec asks for 5) and the free-model benchmark.
+**Deferred to a later iteration (the user's call, 2026-11-24):** the headline and product-fidelity check on real product photos (SPEC-M3 section 9, row 12). Evidence so far: 3 runs, all
+headlines spelled correctly (two on test images, one on the user's bread photo on the deployed site); the loaf was recognizable but looked re-photographed from a new angle; text printed on a
+product was never tested. The spec asks for 5 or more runs; it decides whether the headline stays drawn inside the image by the model (current design) or is overlaid by our own code. If
+misspellings or altered products show up, the overlay is the plan. Skipped now to avoid spending fal credit on tests. Also still open: the free-model benchmark.
 
 ## Streaming the goal cards: investigated, not built (2026-11-24)
 A read-only agent looked at it on request. It is feasible (`streamText` + `Output.object` + `useObject`, saved before the response closes, like the artifact route), about 200 to 300 lines plus test rewrites.
