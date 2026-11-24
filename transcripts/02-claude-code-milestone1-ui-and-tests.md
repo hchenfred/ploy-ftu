@@ -1,6 +1,6 @@
 # Claude Code session: Milestone 1 setup, backend verification, UI and tests
 
-Cleaned export of the Claude Code session (snapshot taken during Milestone 3 (steps 1 to 5)). Tool outputs are omitted and
+Cleaned export of the Claude Code session (snapshot taken after Milestone 3 step 7, the deployed-URL run). Tool outputs are omitted and
 secrets/email are redacted. Tool calls are shown as one-line summaries.
 
 ## User
@@ -4243,3 +4243,1249 @@ Thanks, that's the unblocker. I'll rerun the real fal call, the same one that wa
 I'll re-export the transcript with the same cleaning as before: tool outputs omitted, and every secret and your email redacted. Your fal key is now in `.env.local`, so the redaction covers it too.
 
 > **Bash**: S=/private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/scratchpad; sed -i '' 's/snapshot taken after Milestone 2 was deployed and tested on production/snapshot taken during Milestone 3 (steps 1 to 5)/' $S/export.py; python3 $S/export.py ~/.claude/projects/- …
+
+> **Bash**: pkill -f "next start" 2>/dev/null; npx playwright test --project=live e2e/artifact.live.spec.ts
+
+## Assistant
+
+The transcript is saved, and the full live spec for step 5 is running in the background. I'll report its result when it finishes.
+
+**The transcript:** `transcripts/02-claude-code-milestone1-ui-and-tests.md` is 4,245 lines and 328 KB. It has our messages and my replies in full, with tool calls as one-line summaries and tool outputs left out. It's checked against all five secret values (including `FAL_KEY`), your email and key-shaped strings, and nothing leaked. I updated its row in the transcripts README to cover Milestone 3 steps 1 to 5. It isn't committed yet, so I'll include it in the next commit unless you want it committed on its own.
+
+**Where step 5 stands while the tests run:**
+- **The real fal call works,** after you added credit. The result took about 17 to 21 seconds, came back as a 1024×1024 JPEG, and fal accepted our private storage link.
+- **Headlines:** two real generations gave two correctly spelled, cleanly rendered headlines ("Fresh bread daily" and "Baked at dawn"), and the second kept the bread from my test photo unchanged. That's 2 results so far, not the 5 or more the spec asks for, and it was a test photo, not a real product. A product photo from you would settle it.
+- **Checks done:** the unit tests pass 44 of 44, and the upload route passed all 19 checks.
+- **Failure paths:** I verified each through the real route. A 403 billing error, a 429, a bad output URL, and a missing fal key each leave the user with a saved branded card, the reason recorded, and the key never logged.
+
+What's left for step 5 after this run: the notes and spec updates, the commit and push.
+
+> **Bash**: grep -E "✓|✘|passed|failed" /private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/tasks/bhioup73k.output | cut -c1-200; cd /Users/huanchen/Documents/ploy-ftu && npm run test:unit 2>&1 | grep -E "ℹ (tests|pass|fail)"; git status --short
+
+> **Bash**: npm run lint 2>&1 | tail -1; npx tsc --noEmit 2>&1 | head -2; npm run test:e2e 2>&1 | tail -3; npm run build 2>&1 | grep -iE "error|Finished|uploads|artifact"
+
+## Assistant
+
+Everything is green. I'll bring the spec in line with what the real call confirmed. First I need the exact current wording.
+
+> **Bash**: grep -n "45 s\|55 s\|\*\*Status:\*\*\|returns JSON \`{ ok: true, source }\`" SPEC-M3.md | cut -c1-200
+
+> **Bash**: python3 - <<'EOF' import re p='SPEC-M3.md' lines=open(p).read().split("\n") def sub_line(i, old, new): assert old in lines[i], (i, old[:60], lines[i][:120]) lines[i]=lines[i].replace(old,new,1) # FR-21 line 111 (index 110): the ad answer sub_line(110,'returns JSON `{ ok: true, source }`, not a strea …
+
+## Assistant
+
+Step 5 is built and verified, and I'm stopping here for the checkpoint. Nothing is committed yet.
+
+## What was built
+- **The fal client** ([src/lib/artifact/fal-client.ts](src/lib/artifact/fal-client.ts)). It's pure and uses plain `fetch`. It reads the config as an argument and never touches the environment. It follows only URLs on fal's own host and scrubs the key from errors. Every failure is a typed reason.
+- **The upload route.** It checks the real image type from the bytes, caps the size at 4 MB, and stores the photo in the private bucket. It exposes only the file size, never a path or URL.
+- **The ad path in the generate route.** The sequence is:
+  1. fal gets a 10-minute signed link to our copy of the photo.
+  2. The output is downloaded safely, with https and public hosts only and size and type limits.
+  3. The image is **copied into our own storage**, and no fal URL is stored anywhere.
+  4. The previous image is deleted when it's replaced.
+  5. Any failure saves the branded card with the reason.
+- **A fix I made along the way.** The ad answer used to say success even when nothing was stored because the user had gone back. It now answers 409 and cleans up the file.
+
+## What the real call showed
+- **Before you added credit:** fal refused with a 403 "Exhausted balance". That confirmed our key and header format were right, and gave the real error shape, which we handle as a billing failure.
+- **After credit:** it worked first try, in 17 to 22 seconds per image. fal accepted our private storage link as the reference.
+- **Headlines:** "Fresh bread daily" and "Baked at dawn" were both spelled correctly and cleanly rendered.
+- **Not yet answered:** the spec asks for 5 or more runs on **real product photos**. I've done 2, on test images. Whether a real product stays recognizable is still open, and I haven't measured the price per image. The fal dashboard will show it.
+
+## Test results
+| | Result |
+|---|---|
+| Unit | 44 of 44, including 9 new for the fal client against a stub server |
+| Live spec | 10 of 10, with the real fal call and both real-model calls |
+| Mocked | 50 of 50 |
+| Lint, types, production build | clean |
+
+I also checked the failure paths through the real route: a 403 billing error, a 429, an output URL that isn't a public https address, and a missing fal key. Each leaves a saved branded card, a logged reason, and no key in the logs. I did that with a stub server and environment overrides, so those aren't repo tests.
+
+## One thing for you
+**A real product photo** would let me finish the open check. Send me one, or tell me to use a photo you've uploaded somewhere, and I'll run a few generations with different headlines. Each costs about the amount you saw on your fal dashboard.
+
+The notes, the spec and the updated transcript are ready, and nothing is committed. Should I commit and push step 5? The new routes are live-safe because no screen calls them yet, and it needs `FAL_KEY` in Vercel, which you've set.
+
+## User
+
+commit and push step 5
+
+> **Bash**: npm run lint 2>&1 | tail -1; npx tsc --noEmit 2>&1 | head -2; npm run test:unit 2>&1 | grep -E "ℹ (tests|pass|fail)"; git add -A && git status --short && git commit -q -F - <<'EOF' M3 step 5: product photo upload and the fal ad POST /api/uploads/photo checks the real image type from the bytes, caps  …
+
+## Assistant
+
+Step 5 is committed and pushed as `02c1ff4`. `origin/main` is in sync, and Vercel is deploying it. I re-ran lint, types and the unit tests first, and all passed, 44 of 44.
+
+The commit includes the upload route, the fal client and download helper, the storage helpers, and the ad path in the generate route. It also has the new tests, the spec and notes updates, and the refreshed transcript (checked for secrets before it went in).
+
+**What changes in production:** two routes go live, `POST /api/uploads/photo` and the ad path of `POST /api/artifact/generate`. No screen calls them yet, so users see nothing new. The fal call only happens when `FAL_KEY` is set in Vercel, which you did. If it were missing, the ad would simply be the branded card with the reason `not_configured`.
+
+**Cost note:** nothing in the app can trigger a fal call from a user's click yet, so the deploy can't spend credit by itself. That changes in step 6, when the build screen goes live.
+
+**Step 6 is next, and it's the biggest visible step:**
+- `BuildStep` replaces the placeholder screen. It has the photo picker with browser downsizing, the optional headline field, the named progress steps while it works, and the preview.
+- Regenerate shows its remaining count. Save, the hand-off link, and "Start over" are the rest.
+- Behind that sit `POST /api/artifact/save`, `POST /api/handoff`, the new events, and the `step/back` cleanup of drafts and stored files. The SQL for the activation metric is part of it too.
+- It also wires `useObject`, which the spec moved here.
+
+Since the user sees the whole flow for the first time in this step, I'd also like to run the live suite end to end against the deployed site afterwards.
+
+Should I start step 6? One question first: with the real model taking 10 to 45 seconds and showing nothing until the end, do you want the progress steps to be time-based, advancing on a timer, or only a plain "working… up to a minute" message? Time-based steps feel livelier, but they're not tied to real progress, so I'd label them honestly. My recommendation is a light time-based version.
+
+## User
+
+what does step 6 include?
+
+## Assistant
+
+I'll read it straight from the spec so I describe step 6 as written, not from memory.
+
+> **Bash**: grep -n "^6\. \|^7\. \|^5\. " SPEC-M3.md | sed -n 1,6p | cut -c1-500; echo ----; sed -n '/^### FR-24/,/^### FR-27/p' SPEC-M3.md | cut -c1-420
+
+## Assistant
+
+Step 6 is where the user first sees the whole flow. After a user picks a goal, they reach the build screen, make the artifact, save it, and get the hand-off link. Everything before it was plumbing, which no screen used yet.
+
+## The build screen (`BuildStep`)
+It replaces the placeholder "Your goal is saved" screen. It has four states, and a refresh resumes whichever you were in:
+1. **Inputs, for the ad goal only.** A photo picker with a thumbnail, an optional headline field, and "Generate" or "Skip the photo". The browser downsizes the photo before upload, so it stays small and its location data is removed.
+2. **Generating.** A named playbook of steps, such as "Reading your site", "Choosing the layout" and "Writing the copy". It's wording and progress only, not a real Ploybooks feature. Page and playbook show whatever has streamed in. The ad shows the steps plus an honest wait note. Feedback appears within a second of clicking Generate.
+3. **Preview.** The artifact itself, using the preview components from step 3. "Regenerate" shows how many tries remain, up to 3, and there's a "Save" button.
+4. **Saved.** A "Saved" confirmation, the artifact, and the hand-off card. There's no back link after saving, only "Start over", which begins a new session.
+
+Errors never dead-end. A failed generation shows the saved fallback with a one-line note, and a rate limit shows the same free-tier sentence as before, with a retry. Before saving, "Change my goal" works.
+
+## The server side it needs
+- **`POST /api/artifact/save`** sets the saved time, and the call can be repeated safely. It logs `artifact_saved` with the number of seconds since the session started, which is the activation metric.
+- **`POST /api/handoff`** logs the click on the hand-off link. It's sent so it survives the new tab opening, and a failure never blocks the link.
+- **`step/back` cleanup.** Going back before saving deletes the draft and the stored photo and generated image. A saved artifact can't be reached this way and returns 409.
+- **Events and the metric query.** New events `artifact_saved` and `handoff_clicked`, plus the SQL file for median time to first saved artifact, the funnel, how often the recommendation was followed, and where users get stuck.
+- **`useObject` wiring.** I moved it here from step 4, because it can only be tested properly with a real screen.
+
+## What it does not include
+Step 7 is the final test pass: the mocked and live suites for the whole flow, the deploy, and the run against the deployed site. I'd still write the screen's own tests as I go, because the build screen is the riskiest part to leave untested.
+
+## Decisions to make
+1. **Progress steps:** time-based, which feels livelier, or a plain "working, up to a minute" message? The model gives no real progress signal, so time-based steps wouldn't reflect actual work. I'd recommend a light time-based version, with an honest label.
+2. **A real product photo,** if you can share one, to finish the headline and fidelity check while I'm in this area.
+
+Which do you prefer for the progress steps?
+
+## User
+
+use a light time-based version - don't run live test to call fal ai yet, since it consumes credit
+
+## Assistant
+
+Both decisions are noted. Light time-based steps it is, and **I won't run any test that calls fal.** I'm going to make that hard to do by accident. The one live test that spends fal credit will be skipped unless it's explicitly switched on. I'll also save this as a standing preference for future sessions.
+
+> **Bash**: python3 - <<'EOF' p='e2e/artifact.live.spec.ts' s=open(p).read() old=''' test.info().annotations.push({ type: "fal", description: "1 real fal call (a few cents)" });''' new=''' // This is the only test that spends fal credit, so it is OFF unless asked for: RUN_FAL=1 npx playwright test ... test.skip …
+
+> **Bash**: cat src/app/api/step/back/route.ts | sed -n 1,80p
+
+## Assistant
+
+The `step/back` route is clear. Now the server pieces: a cleanup helper, the cleanup wired into `step/back`, the save and hand-off routes, the new events, and the SQL file for the activation metric.
+
+> **Bash**: python3 - <<'EOF' def edit(p, pairs): s=open(p).read() for old,new in pairs: assert old in s, (p, old[:90]) s=s.replace(old,new,1) open(p,'w').write(s) edit('src/lib/events.ts',[(' | "photo_uploaded";',' | "photo_uploaded"\n | "artifact_saved"\n | "handoff_clicked";')]) edit('src/lib/artifact-store. …
+
+> **Bash**: sed -n 60,86p node_modules/@ai-sdk/react/dist/index.d.ts | cut -c1-200; grep -n "response.ok\|statusText\|throw new Error\|await response.text\|errorText" node_modules/@ai-sdk/react/dist/index.js | head -12
+
+> **Bash**: cat > src/lib/image-client.ts <<'EOF' "use client"; // Browser-side photo preparation for the ad. The photo is shrunk to at most 1,600 px on its longest side and re-encoded as a JPEG, // which keeps the upload small (well under a serverless function's request limit) and drops EXIF data such as GPS l …
+
+> **Bash**: npx tsc --noEmit 2>&1 | head -10; grep -n "Your goal is saved\|Coming soon\|Change my goal\|First win" e2e/*.ts | cut -c1-150
+
+> **Bash**: python3 - <<'EOF' def edit(p, pairs): s=open(p).read() for old,new in pairs: assert old in s, (p, old[:90]) s=s.replace(old,new,1) open(p,'w').write(s) # the chosen goal is shown on every non-saved build screen edit('src/components/steps/build-step.tsx',[ (''' <h1 className="font-heading text-3xl fo …
+
+> **Bash**: cat > e2e/build-step.mocked.spec.ts <<'EOF' import { expect, test, type Page } from "@playwright/test"; import { PAGE, PLAYBOOK, TINY_PNG } from "../src/lib/artifact/fixtures"; import type { SessionState } from "../src/lib/goals"; import { FAKE_ID, fakeBackend, goals3, makePng } from "./helpers"; // …
+
+## Assistant
+
+Everything compiles. I'll restart the dev server on the new code and run just the new build screen tests first, one Playwright command only.
+
+> **Bash**: pkill -f "next dev"; sleep 2; echo stopped
+
+> **Bash**: npm run dev
+
+## Assistant
+
+That's the previous dev server exiting, since I replaced it. I'll wait for the new one and run the new build screen tests.
+
+> **Bash**: for i in $(seq 1 25); do [ "$(curl -s -o /dev/null -w '%{http_code}' localhost:3000)" = 200 ] && break; sleep 2; done; npx playwright test --project=mocked e2e/build-step.mocked.spec.ts 2>&1 | grep -E "✓|✘|passed|failed|Error:|Expected|Received|expect\(|›.*›" | head -60 | cut -c1-230
+
+> **Bash**: python3 - <<'EOF' p='e2e/build-step.mocked.spec.ts' s=open(p).read() old='const current = page.locator(\'[aria-current="step"]\');' assert old in s s=s.replace(old,'const current = page.getByRole("status", { name: "Progress" }).locator(\'[aria-current="step"]\'); // not the onboarding bar at the top …
+
+## Assistant
+
+All 16 build screen tests pass. Now the full mocked suite, the unit tests, lint, types and the production build, one after another.
+
+> **Bash**: npm run lint 2>&1 | tail -1; npx tsc --noEmit 2>&1 | head -2; npm run test:unit 2>&1 | grep -E "ℹ (tests|pass|fail)"; npm run test:e2e 2>&1 | tail -4; npm run build 2>&1 | grep -iE "error|Finished|handoff|artifact/save|✓ Gen"
+
+> **Bash**: python3 - <<'EOF' p='e2e/artifact.live.spec.ts' s=open(p).read() anchor='// ---------- the product photo upload and the fal ad ----------' add='''// ---------- save, hand-off and going back (step 6) ---------- const ids = (page: import("@playwright/test").Page, goal: { goal_type: string; goal_label: …
+
+> **Bash**: npx playwright test --project=live e2e/artifact.live.spec.ts
+
+## Assistant
+
+The live artifact spec is running in the background, and I'll report its result. Meanwhile, here is where step 6 stands, with nothing committed yet.
+
+## What's built
+- **The build screen** replaces the old placeholder. It has four states, and a refresh resumes whichever you were in:
+  - **Intro:** for the ad it has a photo picker, a headline field and the privacy line, and Generate stays disabled until a photo is added. "Skip the photo" is there too.
+  - **Progress:** a light time-based guide. The steps advance every 7 seconds and hold on the last one. The screen says they're a guide and not exact progress, and a timeout offers "Try again".
+  - **Preview:** the artifact, Regenerate with the remaining count, Save, and "Change my goal". When the AI's answer wasn't used, a plain note says so, for example the rate-limit sentence or "text-only card."
+  - **Saved:** a confirmation, the artifact, the hand-off card with the "Continue in Ploy" link, and "Start over". There's no way back after saving.
+- **Photo handling in the browser:** the photo is shrunk to 1,600 px as a JPEG before upload, which strips location data. Files the browser can't read, like HEIC, get a plain message and are never sent.
+- **Server routes:**
+  - Save, which logs the activation event with the seconds since the start.
+  - Hand-off, which logs the click.
+  - Going back, which now deletes the draft, the generated image and the uploaded photo.
+- **A SQL file** at `supabase/queries/activation.sql` with the median time to first saved artifact, the funnel, goal choices versus the recommendation, failures, and hand-off clicks.
+
+## Results so far
+| | Result |
+|---|---|
+| Unit | 44 of 44 |
+| Mocked | 66 of 66, which is the 50 from before plus 16 new build screen tests |
+| Lint, types, production build | clean |
+
+One test failed along the way. It was my locator matching two "current step" markers, so it was a test bug. I fixed it.
+
+## fal credit
+No test I wrote or ran in this step calls fal. The one real-call test is skipped unless you set `RUN_FAL=1`, and I saved your "don't spend fal credit" rule as a standing preference for future sessions.
+
+## Still to do for step 6
+- The live result, which I'll confirm shortly.
+- A fix to the notes and the spec.
+- The commit and push.
+
+## User
+
+commit and push step 6
+
+## Assistant
+
+I'll check the live run before pushing, since the new save, hand-off and cleanup routes are exactly what it covers.
+
+> **Bash**: pgrep -f "playwright test" >/dev/null && echo "still running" || echo "finished"; grep -E "✓|✘|passed|failed|skipped" /private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/tasks/b7699qsxy.output | cut -c1-190
+
+> **Bash**: python3 - <<'EOF' def edit(p, pairs): s=open(p).read() for old,new in pairs: assert old in s, (p, old[:90]) s=s.replace(old,new,1) open(p,'w').write(s) edit('SPEC-M3.md',[ ('1. **Inputs** (only `launch_product`): photo picker (with a thumbnail), optional headline, "Generate" and "Skip the photo".',' …
+
+## Assistant
+
+Step 6 is committed as `021131f`, but I haven't pushed yet. I'm waiting on the last live test results first.
+
+> **Bash**: pgrep -f "playwright test" >/dev/null && echo "still running" || echo "finished"; grep -E "✓|✘|- |passed|failed|skipped" /private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/tasks/b7699qsxy.output | tail -6 | cut -c1-200
+
+## Assistant
+
+The live spec is on its last two tests, the paced real-model calls. The fal test shows as skipped, which is what I wanted, so no fal credit has been spent. Those two model tests exercise the generate route from step 4, which step 6 didn't change, but I'd rather see them pass before shipping. I'll push as soon as they finish, which should be about a minute and a half.
+
+> **Bash**: grep -E "✓|✘|- |passed|failed|skipped" /private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/tasks/b7699qsxy.output | tail -5 | cut -c1-190; cd /Users/huanchen/Documents/ploy-ftu && git status -sb | head -2; git push 2>&1 | tail -2; git status -sb | head -2; …
+
+## Assistant
+
+Step 6 is pushed as `021131f`, and Vercel is deploying it. The live spec passed 13 tests with 1 skipped, and the skipped one is the fal test, which is intentional. Both real-model tests passed, so no fal credit was spent.
+
+**What you can test once it's deployed:** this is the first time the whole flow is visible to a user. Run a site through to the goal step and pick a goal:
+- **Landing page or campaign playbook:** the intro screen with a Generate button. Click it, wait for the timed progress steps (up to a minute with this model), and then see the preview. Try Regenerate, which counts down from 3. Click Save and look at the hand-off card. The link opens a placeholder page at `example.com/ploy/...`.
+- **Ad:** upload a real product photo, optionally type a headline, and click Generate. **This is the step that calls fal** and will spend a little of your credit. Check the headline spelling and whether the product stays recognizable. Also try "Skip the photo" for the text-only card.
+- **Going back and starting over:** "Change my goal" before saving deletes the draft and your photo. After saving it's gone, and "Start over" begins a new session.
+
+If you tell me what you see, especially with the real photo, I'll record it in the notes and fix anything. That real-photo result is what finishes the open headline and fidelity check.
+
+**Step 7, the last one, is the verification pass:** run the mocked suite and the live tests against the deployed site, except the fal one. Then I'd write the per-criterion results into the notes. Do you want me to start that after you've had a first look at the deployed screens, so any problems you find get fixed first?
+
+## User
+
+it shows the raw goalType
+
+## User
+
+[Image: source: /private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/images/1.png]
+
+## Assistant
+
+That's a real bug, and a good catch. The model's answer for that goal got garbled: its `reason` field ended with a fragment of its own JSON (`},{goalType:`), and we displayed it as text. The same thing could leak into any model-written text, such as page copy or playbook tasks. I'll fix it in three places:
+1. Clean the leak where model text enters (`normalizeGoals` and the validators).
+2. Clean it when stored suggestions are read back, so goals already saved in your session also render correctly.
+3. Add tests using your exact string.
+
+> **Bash**: python3 - <<'EOF' def edit(p, pairs): s=open(p).read() for old,new in pairs: assert old in s, (p, old[:90]) s=s.replace(old,new,1) open(p,'w').write(s) edit('src/lib/goals.ts',[ ('''// The suggestGoals tool's input schema doubles as the structured output''','''/** * Remove a fragment of the model's  …
+
+> **Bash**: python3 - <<'EOF' p='src/lib/goals.ts' s=open(p).read() old='const leak = text.search(/[{}[\\]]|"\\s*:|\\bgoalType\\b/i);' assert old in s, "pattern" s=s.replace(old,'const leak = text.search(/[{}[\\]]|"\\s*,\\s*"|"\\s*:|\\bgoalType\\b/i);',1) s=s.replace("The text is cut at the first brace, bracket …
+
+> **Bash**: python3 - <<'EOF' p='e2e/goals.live.spec.ts' s=open(p).read() anchor='// --- model tests' if anchor not in s: anchor='test("AC-26:' add='''test("suggestions saved with a leaked JSON fragment are shown, offered again and saved clean", async ({ page, request }) => { const dirty = goals3().map((g) => g …
+
+> **Bash**: npm run dev
+
+## Assistant
+
+That's the previous dev server exiting, as expected. Now I'll wait for the new one and run the new live test.
+
+> **Bash**: for i in $(seq 1 25); do [ "$(curl -s -o /dev/null -w '%{http_code}' localhost:3000)" = 200 ] && break; sleep 2; done; npx playwright test --project=live e2e/goals.live.spec.ts -g "leaked JSON fragment" 2>&1 | grep -E "✓|✘|passed|failed|Error:|Expected|Received" | head -10 | cut -c1-220
+
+> **Bash**: python3 - <<'EOF' p='e2e/goals.live.spec.ts' s=open(p).read() old='expect(JSON.stringify(state)).not.toMatch(/goalType:|\\},\\{/);' assert old in s s=s.replace(old,'expect(JSON.stringify(state)).not.toContain("goods.},{goalType:"); // the leaked fragment is gone ("},{" alone is just two objects in a …
+
+## Assistant
+
+It passes: the state, the suggest route's saved answer and the card the user sees are all clean. Now the full mocked suite, the build, and a note about this bug before I commit and push the fix.
+
+> **Bash**: python3 - <<'EOF' p='NOTES.md' s=open(p).read().rstrip("\n") s+=""" ## Bug found by the human's manual test of the deployed app (2026-11-23): raw JSON in a goal card - **Symptom:** a goal card showed "Customers love visual appeal of baked goods.},{goalType:" (a screenshot from the deployed site): th …
+
+> **Bash**: python3 - <<'EOF' p='src/app/api/artifact/generate/route.ts' s=open(p).read() old=''' if (photoPath && !cfg) { reason = "not_configured"; }''' assert old in s s=s.replace(old,''' if (photoPath && !cfg) { reason = "not_configured"; detail = "FAL_KEY is not set in this environment"; // recorded in the …
+
+## Assistant
+
+Two things are committed locally as `04128db`, but I haven't pushed:
+- **The raw JSON bug you reported earlier,** which is fixed, tested and noted. The fix is for model text only, and a user's own headline is untouched.
+- **The extra diagnostic detail** for the missing-key case.
+
+The checks pass: 48 of 48 unit tests, all 66 mocked tests, the live test for the leak, and a clean lint, type check and build.
+
+## What I need from you
+1. **Check `FAL_KEY` in Vercel** as described above (Production ticked, exact name, non-empty), and redeploy if you changed it after the last deploy.
+2. **Tell me if I should push `04128db`.** The JSON fix is live-affecting: the dirty goal card will keep showing in production until it's deployed. I can't push without you saying so.
+
+## Your bread photo
+That's a good, real product photo, so it's the right test for the open headline and fidelity check. Once the key works, try it again with a headline. When you see the result, tell me what you notice: whether the loaf stays recognizable and the text is spelled correctly. I'll record it in the notes.
+
+One thing I noticed in your screenshot: the text-only card shows "Starter Bakery" twice, as the headline and again as the small caption, because no headline was typed. That's the intended rule (the business name when there's no user text), but it does look redundant. If you'd like, I can hide the caption when it equals the headline. It's a small fix.
+
+## User
+
+where can i add FAL_KEY in Vercel
+
+## Assistant
+
+In the Vercel dashboard:
+
+1. Open vercel.com and click your project (`ploy-ftu`).
+2. Click **Settings** in the top tab bar.
+3. In the left sidebar, click **Environment Variables**.
+4. Look at the list for `FAL_KEY`.
+   - **If it's there,** check that **Production** shows next to it, that the name is exactly `FAL_KEY`, and that the value isn't empty. You can click the row to edit it.
+   - **If it isn't there,** add it in the form at the top. Set **Key** to `FAL_KEY` and **Value** to your fal key. Under **Environments**, make sure **Production** is ticked, and leaving all three ticked is fine. Then click **Save**.
+5. **Redeploy.** The change only applies to new deployments. Go to the **Deployments** tab, click the latest deployment, then the **⋯** menu on the right, then **Redeploy**.
+
+After the redeploy finishes (usually a minute or two), try uploading your bread photo again.
+
+Two small notes:
+- **If you tick "Sensitive"** when you save, Vercel hides the value afterwards. That's fine, and it's safer for a secret key.
+- **Don't paste the key into this chat.** I can't see Vercel's settings, so the way I'll know it worked is the text-only card message disappearing on your next try.
+
+Also, `.env.local` is only for your machine. Vercel doesn't read it, which is why the key worked locally but not on the deployed site.
+
+## User
+
+still got the error
+
+## Assistant
+
+I can check this from my side without spending any credit. Every failed attempt writes a record with the exact reason, so I'll look at your latest ones.
+
+> **Bash**: python3 - <<'EOF' import json, urllib.request env={} for l in open(".env.local"): if "=" in l and not l.startswith("#"): k,v=l.split("=",1); env[k]=v.strip().strip('"') SB=env["SUPABASE_URL"]+"/rest/v1"; H={"apikey":env["SUPABASE_SERVICE_ROLE_KEY"],"Authorization":"Bearer "+env["SUPABASE_SERVICE_ROL …
+
+## Assistant
+
+Your three attempts show in the log, all on one session: each one uploaded your bread photo (32,583 bytes) and then came back `not_configured`. I'll compare the latest one against the current time.
+
+> **Bash**: date -u +"now: %Y-%m-%d %H:%M:%S UTC"; cd /Users/huanchen/Documents/ploy-ftu && git log -3 --format="%h %cd %s" --date=format:"%Y-%m-%d %H:%M:%S local" | cut -c1-110
+
+## Assistant
+
+Your last attempt was about 40 seconds ago, and it still came back `not_configured`. So whichever deployment you're using doesn't have `FAL_KEY` at runtime. That rules out fal, billing and your photo as causes. The app simply can't find the variable.
+
+## What the log shows
+- Your session made three attempts, and each one uploaded your bread photo successfully and then reported `not_configured`.
+- The latest was at 07:06 UTC.
+- No fal call was made in any of them, so no credit was spent.
+
+## Where the variable is probably going wrong
+Roughly in order of likelihood:
+1. **The wrong environment.** On the Environment Variables page, the row for `FAL_KEY` must show **Production**. If it only shows Preview or Development, the live site never sees it. This is the most common cause.
+2. **The wrong project.** You may have more than one Vercel project, and the variable was added to a different one than the site you're testing.
+3. **A redeploy that didn't pick it up.** Saving the variable and then redeploying should work. A redeploy started before the save finished does not.
+4. **The name.** It must be exactly `FAL_KEY`, with no extra characters and a non-empty value.
+
+## The most reliable fix
+A fresh deployment from a new push always starts from the current variables. I have a commit ready locally that does that and also carries two changes you'll want anyway:
+- the fix for the raw JSON in the goal card;
+- a clearer log note when the key is missing, so the next failure says "FAL_KEY is not set in this environment" instead of just the reason.
+
+Should I push `04128db`? Once it deploys, try the photo again. If it still says "isn't set up yet," tell me what the `FAL_KEY` row shows in Vercel (the environments ticked, with the value hidden), and we'll know it's the setup.
+
+## User
+
+deploy locally
+
+## Assistant
+
+You mean running it on your own machine. That's easy because the local server already has everything, including your `FAL_KEY`. I'll confirm it's up on the latest code.
+
+> **Bash**: printf "dev server: "; curl -s -o /dev/null -w "%{http_code}\n" localhost:3000; for k in FAL_KEY FAL_MODEL_ID; do v=$(grep -E "^$k=" .env.local | head -1 | cut -d= -f2- | tr -d '"'); [ -n "$v" ] && echo "$k: set" || echo "$k: not set (the default model google/nano-banana-2.1/edit is used)"; done; gi …
+
+## Assistant
+
+The local server is running at **http://localhost:3000** on the latest code (`04128db`, with the JSON fix). `FAL_KEY` is set in `.env.local`, so the real ad generation will work here. `FAL_MODEL_ID` isn't set, so it uses the default model, `google/nano-banana-2.1/edit`.
+
+**To test your bread photo:**
+1. Open http://localhost:3000 and run a site through to the goal step. If an old session is still stored, use "Use a different website" or clear the site's local storage to start fresh.
+2. Pick the goal that leads to the **ad** (the "Launch my product…" one).
+3. Choose your bread photo, optionally type a headline, and click **Generate**.
+4. Wait about 20 seconds. The progress steps will advance on their own.
+
+**Cost:** each generation calls fal, which costs a few cents. You get up to 3 tries per session, and the previous image is deleted each time. Since you're running this yourself, I'm leaving all of it to you and making no fal calls of my own.
+
+**Please look for:**
+- **The product.** Is the loaf still recognizably your loaf, with the same crust, shape and colour, or did the model redraw it?
+- **The headline.** Is it spelled correctly and cleanly rendered?
+- **The background.** Does it suit the brand colour (the blue from the site)?
+
+Tell me what you see, especially if it looks wrong. I'll record it in the notes as the real-photo result.
+
+If you try the **JSON fix** too, the goal cards should show clean text now. Cards stored before the fix are also cleaned when they're read.
+
+The production site still has the old behaviour until I push `04128db` and you've confirmed `FAL_KEY` reaches Vercel.
+
+## User
+
+hmm, when i run it locally , got the same error
+
+## Assistant
+
+That's useful, because it narrows things down. The local server runs my newest code, which records "FAL_KEY is not set in this environment" when the key is missing. So the event log will show whether your local attempt reached my server and what it said.
+
+> **Bash**: date -u +"now: %H:%M:%S UTC"; python3 - <<'EOF' import json, urllib.request env={} for l in open(".env.local"): if "=" in l and not l.startswith("#"): k,v=l.split("=",1); env[k]=v.strip().strip('"') SB=env["SUPABASE_URL"]+"/rest/v1"; H={"apikey":env["SUPABASE_SERVICE_ROLE_KEY"],"Authorization":"Bear …
+
+## Assistant
+
+The log shows the two failures are different, and the local one is a different problem from the one you saw on the deployed site.
+
+## What the log shows
+| When (UTC) | Where | What happened |
+|---|---|---|
+| 07:06 and 07:12 | **Deployed site** | `not_configured`: the app couldn't find `FAL_KEY` at all. |
+| 07:14 | **Your local run** | **`billing`**: the app found the key and called fal, and fal answered *"403 User is locked. Reason: Exhausted balance. Top up your balance at fal.ai/dashboard/billing."* |
+
+So locally, your setup is right. The key is read, and fal accepts it. fal now says the account is out of credit. The text-only card you see is the correct fallback for that.
+
+## The two fixes
+1. **Top up fal.** Go to fal.ai/dashboard/billing and check the balance. fal locks the account when the balance runs out or falls below its minimum, so you may need a bigger top-up than before.
+2. **Make `FAL_KEY` reach Vercel.** This is the earlier problem. It only matters once fal has credit again.
+
+## Something I should tell you
+Before you asked me to stop spending credit, I made **four real fal calls** during my own testing: the first probe, two runs of the route test, and one live test run. They produced the images I showed you. I don't know what fal charged for them, and the dashboard will show it. If your top-up was small, they may have used a noticeable part of it. I should have asked before the live-test run, and I've since made that test opt-in.
+
+## Next steps
+I'd suggest this order:
+1. **Top up fal**, then retry the bread photo locally.
+2. **Push `04128db`** so the deployed site gets a fresh deployment, with the JSON fix and a clearer log line when the key is missing.
+3. **Check the `FAL_KEY` row in Vercel** (the Production box ticked, exact name) if the deployed site still says "isn't set up yet."
+
+Should I push `04128db` now? It makes no calls to fal.
+
+## User
+
+i already top up fal
+
+## Assistant
+
+Thanks. I'll check the log to see whether you've retried since topping up, and what fal said.
+
+> **Bash**: date -u +"now: %H:%M:%S UTC"; python3 - <<'EOF' import json, urllib.request env={} for l in open(".env.local"): if "=" in l and not l.startswith("#"): k,v=l.split("=",1); env[k]=v.strip().strip('"') SB=env["SUPABASE_URL"]+"/rest/v1"; H={"apikey":env["SUPABASE_SERVICE_ROLE_KEY"],"Authorization":"Bear …
+
+## Assistant
+
+The log shows **no attempt since 07:14:54**, and it's 07:17 now. That last attempt is the one fal refused for balance, so it probably happened before your top-up. Nothing has tested the new balance yet.
+
+**Try again now on your local server:**
+1. Open http://localhost:3000 and use the same session if it's still there. The text-only card is the current draft.
+2. Click **Regenerate (2 left)**. It reuses the photo you already uploaded, so you don't need to upload it again.
+3. Wait about 20 seconds.
+
+If it works, you'll see a real generated ad, and the note above the card will be gone. This costs a few cents.
+
+**If it still says the image couldn't be made:**
+- fal can take a minute or two to unlock an account after a top-up. Give it a moment and click Regenerate again.
+- Check at fal.ai/dashboard/billing that the balance is positive and there's no "locked" notice. If the top-up was small, fal may keep the account locked until the balance clears its minimum.
+
+**I can read the result either way.** Every attempt writes its exact reason to the log, so if you tell me you've retried, I'll check what fal answered and tell you right away. I won't call fal myself.
+
+Separately, the deployed site still needs the `FAL_KEY` fix and the push of `04128db`. Those can wait until you've seen the local result.
+
+## User
+
+let's push the change first
+
+> **Bash**: git status -sb | head -3; git push 2>&1 | tail -2; git status -sb | head -2; git log --oneline | head -2
+
+## Assistant
+
+Pushed as `04128db`, and `origin/main` is in sync. Vercel is deploying it now, which usually takes a minute or two.
+
+**What the deploy changes:**
+- **The goal card JSON fix** is live. The leaked `},{goalType:` text is gone from model-written text, and suggestions already stored for your session are cleaned when they're read.
+- **A fresh deployment.** It starts from the environment variables as they are in Vercel right now, so if `FAL_KEY` is saved with Production ticked, this one should pick it up.
+- **A clearer log line.** If the key is still missing, the event log will say "FAL_KEY is not set in this environment" instead of just the reason.
+
+**To check the deployed site once it's built:**
+1. Go to the site and upload the bread photo again. It's a new deployment, so use "Regenerate" or start a new run.
+2. **If the card still says "Image creation isn't set up yet,"** the key still isn't reaching Vercel. Tell me, and I'll read the log. It will confirm whether the variable is missing. Then check the `FAL_KEY` row in Vercel (the Production box ticked, exact name).
+3. **If it says "We couldn't make the image,"** the key reached fal and fal refused it. That would be the balance issue again, and the log will show fal's exact answer.
+4. **If it works,** you'll see a real generated ad.
+
+Retrying locally first may be the quickest way to see a real result, since the key and the credit are both confirmed there. Whichever you try, tell me what you see and I'll read the log.
+
+## User
+
+looks like it works locally now
+
+## Assistant
+
+You've hit your 5-hour limit · resets 1am (America/Los_Angeles)
+
+## User
+
+why waiting for the research result to return, there's no loading state
+
+## Assistant
+
+Good to hear it works locally. Since the images are stored in our own bucket, I can look at what it produced without calling fal. After that I'll look at your loading-state point, which sounds like a real gap.
+
+> **Bash**: S=/private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/scratchpad; python3 - <<'EOF' import json, urllib.request env={} for l in open(".env.local"): if "=" in l and not l.startswith("#"): k,v=l.split("=",1); env[k]=v.strip().strip('"') SB=env["SUPABASE_URL" …
+
+> **Read**: /private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/scratchpad/user-out.jpg
+
+## Assistant
+
+That's your real result, and it's good. I'll give an honest read of it below. First, your loading-state point. I think I know the cause, but I'll check the code before I say so.
+
+> **Bash**: grep -n "submitted\|Working\|pendingDomain\|const busy\|researchOk\|lastIsAssistant" src/components/steps/site-step.tsx | head -30
+
+> **Bash**: sed -n 106,126p src/components/steps/site-step.tsx; sed -n 198,212p src/components/steps/site-step.tsx
+
+> **Bash**: python3 - <<'EOF' def edit(p, pairs): s=open(p).read() for old,new in pairs: assert old in s, (p, old[:90]) s=s.replace(old,new,1) open(p,'w').write(s) edit('src/components/steps/site-step.tsx',[ (''' // Continue appears once the chat turn is finished and the server has what it needs to move on.''', …
+
+> **Bash**: cat > e2e/loading.mocked.spec.ts <<'EOF' import { createServer, type Server } from "node:http"; import type { AddressInfo } from "node:net"; import { expect, test, type Page } from "@playwright/test"; import { fakeBackend } from "./helpers"; // Step 1 with a REASONING model: it thinks silently (the  …
+
+## Assistant
+
+Both pass. To be sure the test actually catches the bug and isn't passing for the wrong reason, I'll temporarily put the old code back and confirm the test fails.
+
+> **Bash**: git stash push -q src/components/steps/site-step.tsx && echo "old code restored (fix stashed)"; npx playwright test --project=mocked e2e/loading.mocked.spec.ts 2>&1 | grep -E "✓|✘|passed|failed|Locator|Expected" | head -8 | cut -c1-170; git stash pop -q && echo "fix restored"; git status --short | h …
+
+> **Bash**: date -u +"now: %H:%M:%S UTC"; python3 - <<'EOF' import json, urllib.request env={} for l in open(".env.local"): if "=" in l and not l.startswith("#"): k,v=l.split("=",1); env[k]=v.strip().strip('"') SB=env["SUPABASE_URL"]+"/rest/v1"; H={"apikey":env["SUPABASE_SERVICE_ROLE_KEY"],"Authorization":"Bear …
+
+> **Agent**: Investigate page generation timeouts
+
+> **Bash**: python3 - <<'EOF' p='NOTES.md' s=open(p).read().rstrip("\n") s+=""" ## Real-photo fal result and a loading-state bug, both from the human's manual testing (2026-11-24) - **fal worked locally with a real product photo** (a sourdough loaf, 32,583 bytes after the browser shrink). Result read from our o …
+
+> **Bash**: python3 - <<'EOF' p='NOTES.md' s=open(p).read().rstrip("\n") s+=""" ## Page generation timeout seen by the human (2026-11-24) - **What happened:** the page generation took **51.2 seconds, over the 50-second cap, so it fell back to the generic page; model speed varies widely.** The user saw "That too …
+
+## Assistant
+
+**What I meant by "a standard version":** the AI didn't deliver a usable page, so the app showed a ready-made template instead of leaving you with nothing. It isn't AI-written, and it's the same for every business apart from the name.
+
+For the landing page, the template has:
+- the headline "Work with {business name}",
+- your site's summary as the subheading,
+- a "Request a quote" button,
+- three generic benefits ("Simple to start", "Made for you", "Clear next steps"),
+- an "About" section and a quote form.
+
+For the playbook, it's a generic six-step campaign plan. For the ad, it's the text-only card.
+
+It's a safety net, shown whenever the AI's answer can't be used: a timeout like yours, a rate limit, or an answer in the wrong format. The word "standard" came from me, and it's unclear. I'd change it to something plain like **"The AI took too long, so this is a basic template instead. You can try again."** The change is one line, so say if you want it.
+
+I've also taken notes in [NOTES.md](NOTES.md): the 51.2-second run, the cap, the wide variation, and that the wording confused you.
+
+## What the research agent found
+- **Why it timed out:** the model took about 51 seconds, past our 50-second cap, and the 1.2 seconds over is overhead around the call. It's a reasoning model, so it thought silently the whole time.
+- **A timeout cost you a try.** Every generation counts when it starts, even a failed one. That's unfair here, since you did nothing wrong and the free model costs us nothing per call.
+
+| Option | Effect |
+|---|---|
+| **Raise the time limit** | Would have saved this run. The slowest run seen was 51 seconds. With Vercel's Fluid compute on, functions can run up to 300 seconds on the Hobby plan, but I can't see whether your project has it on. The claim window and the screen's give-up timer have to be raised with it. |
+| **Don't count timeouts as tries** | Fixes the unfairness, with a separate hard cap so it can't loop forever. |
+| **Limit the model's reasoning** | The biggest speedup if it works, but the model's page says its reasoning controls are unreported. It needs testing: about 5 runs each. |
+| **A faster, non-reasoning model** | The most predictable, but the free tier may not include one. |
+| **An automatic second try** | Skip it. It would cut the time per attempt in half. |
+
+## What I'd do
+1. Raise the limit to about 100 seconds, with the two linked values, the claim window and the screen's timer. Please check in Vercel that Fluid compute is enabled for the project.
+2. Stop counting timeouts and rate limits as tries, with a hard cap of 6 in total.
+3. Fix the wording as above.
+4. Test limiting the reasoning afterwards. It costs only free-model requests, and I'd keep it only if it's faster and the answers stay well formed.
+
+The loading-state fix is done but not yet committed or pushed: the two tests that fail on the old code and pass on the new, with 68 of 68 mocked tests green.
+
+Should I go ahead with items 1 to 3, and commit them together with the loading fix?
+
+## User
+
+is there any other free models i can consider to use
+
+## Assistant
+
+I can check this directly: the Vercel AI Gateway publishes a public model catalog, so I'll read it. It makes no model calls and uses no credit.
+
+> **Bash**: cd /private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/scratchpad && curl -s -m 30 -o models.json -w "HTTP %{http_code}, %{size_download} bytes\n" https://ai-gateway.vercel.sh/v1/models; python3 - <<'EOF' import json d=json.load(open("models.json")) items= …
+
+## Assistant
+
+The catalog has a `free` tag, plus tags for `reasoning`, `fast`, `tool-use` and `structured-output`. That's what I need.
+
+> **Bash**: cd /private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/scratchpad && python3 - <<'EOF' import json d=json.load(open("models.json")); items=d.get("data",d) free=[m for m in items if "free" in (m.get("tags") or [])] print(f"models tagged free: {len(free)}\n" …
+
+> **Bash**: cd /private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/scratchpad && python3 - <<'EOF' import json d=json.load(open("models.json")); items=d.get("data",d) def zero(m): p=m.get("pricing") or {} try: return float(p.get("input","1"))==0 and float(p.get("outpu …
+
+> **Bash**: python3 - <<'EOF' p='NOTES.md' s=open(p).read().rstrip("\n") s+=""" ## Free models available through the Vercel AI Gateway (read from its public catalog, 2026-11-24; nothing was called or tested) Source: `https://ai-gateway.vercel.sh/v1/models` (518 models; no key needed). The catalog's `free` tag i …
+
+## Assistant
+
+Yes, but the choice is narrow. I read Vercel's public model catalog, so I'm reporting what it says. I haven't called or tested any of these models.
+
+**The free pool is small.** Only six language models are priced at zero or named `-free`, and **every one is a reasoning model.** There's no fast, non-reasoning free model, which is why the silent thinking time is hard to avoid on the free tier.
+
+| Model | Structured output | Reasoning control | My take |
+|---|---|---|---|
+| **`nvidia/nemotron-3.5-lightning-free`** (your current) | Yes | **Toggle, plus effort: none, low, medium, high** | The best lever, see below. |
+| `reflection/beam-free` (and `reflection/beam`) | Yes | Effort: low up to max, no `none` | The most plausible second choice: 1M context, structured output and tools. |
+| `recursive/flint-v1.0` | Yes | Effort: low, medium, high | Very new, so quality is unknown. |
+| `humansand/ampersand-v0.1` | **No** | Effort: low to max | A poor fit: our route needs structured output. |
+| `stealth/glyph-cluster` | **No** | Effort: low to xhigh | A poor fit, and also a "stealth" model. |
+
+## The most promising option isn't a new model
+The catalog lists **reasoning controls for the model you already use**: you can set its effort to `low` or turn thinking off entirely. The research agent couldn't confirm that from the model page. If Vercel honours the setting for this model, it would cut the silent 10 to 45 seconds that caused your 51-second timeout, with no model change.
+
+## What I can't tell you
+Latency, how well each follows our format, and the rate limits of any of them. I also can't tell whether the setting actually reaches this model through the Gateway. A model that's free on paper may still be refused, as the paid one was earlier. Swapping is only the `MODEL_ID` setting, but each swap needs re-testing.
+
+I've recorded all of this in the notes.
+
+## What I'd suggest
+A small benchmark, using only free-model requests and no fal calls. It would run the same page request a few times for each setting, and record how long each takes and whether the answer is well formed. The settings would be nemotron at `none` and `low`, plus `reflection/beam-free` at `low`. That's about a dozen requests at the free limit of roughly 5 a minute, so a few minutes in total. It needs no changes to the app until we see the numbers.
+
+Should I run the benchmark? Then we can decide with real numbers whether the fix is the reasoning setting, a different model, or just a higher time limit.
+
+## User
+
+let's change the limit from 50s to 60s
+
+## Assistant
+
+That's a small change, but it touches three coupled numbers, and one of them matters a lot. If the model's wait goes to 60 seconds while the Vercel function limit stays at 60, Vercel would kill the function at exactly the moment we'd need to save the fallback. The user would get nothing saved, and the claim would block retries. So I'll move the others with it, keep them in one place, and add a test so they can't drift apart.
+
+> **Bash**: grep -n "50_000\|maxDuration\|CLAIM_TTL_MS\|GIVE_UP_SECONDS\|up to a minute\|Up to 45" src/app/api/artifact/generate/route.ts src/lib/artifact-store.ts src/components/steps/build-step.tsx | cut -c1-170
+
+## User
+
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+
+Summary:
+1. Primary Request and Intent:
+   - Overall project: build and verify an AI-native first-time-user (FTU) onboarding MVP for "Ploy" (take-home), working in small steps per SPEC files, with tests, NOTES.md decision log, transcripts in `transcripts/`, deploy to Vercel and verify on the deployed URL (https://ploy-ftu-pn3w.vercel.app). Repo: /Users/huanchen/Documents/ploy-ftu, remote github.com/hchenfred/ploy-ftu, branch main.
+   - MVP (SPEC-M3.md): after the M1 site-research step and M2 goal step, user picks one of three goals (`launch_product` → ad creative from an uploaded product photo via fal.ai, `get_leads` → landing-page preview, `plan_campaign` → campaign playbook; the model marks the best fit "Recommended" and it is pre-selected), one artifact is generated, previewed, saved, then a hand-off link (placeholder URLs https://example.com/ploy/ads|sites|ploybooks) is shown. Activation metric = time from `ftu_started` to `artifact_saved`; paid conversion = `handoff_clicked`. Publishing, leads table, metrics page etc. are deferred ("next", docs/next/).
+   - Most recent explicit user request: "let's change the limit from 50s to 60s" (the model-call timeout in the artifact generate route: `AbortSignal.timeout(50_000)` → 60 s). I identified this must be done together with coupled values (see section 9).
+   - Other open items the user raised that are not yet acted on: (a) wording of the fallback note ("a standard version" confused them; I proposed "The AI took too long, so this is a basic template instead. You can try again." and offered to change it); (b) a free-model benchmark (offered, awaiting approval); (c) the user's deployed site still lacks FAL_KEY at runtime (Vercel env var not reaching deployment; user to check Production box/exact name and redeploy; commit 04128db was pushed to force a fresh deployment); (d) step 7 of M3 (deployed-URL verification, AC table in NOTES).
+   - Research-agent recommendations for timeouts (offered to the user, only "change the limit to 60s" was explicitly chosen so far): raise limit (with coupled values), don't count timeouts/rate limits as tries (with hard cap e.g. 6), clearer wording, test `reasoning: 'low'/'none'` on the current model.
+
+2. Key Technical Concepts:
+   - Next.js 16 (App Router, Turbopack, cacheComponents; `params` is a Promise; `RouteContext`; route segment config like `maxDuration` must be a literal), React 19, TypeScript strict, Tailwind 4, shadcn/ui (base-nova) + `message` component.
+   - Vercel AI SDK v7 (`ai` ^7, `@ai-sdk/react` ^4): `streamText` with `output: Output.object({schema})`, `createTextStreamResponse({stream: toTextStream({stream: result.stream})})`, `useObject` on client, `generateText` with forced `toolChoice`, `isStepCount`, `result.output`/`result.text`, `createUIMessageStreamResponse`, `useChat` with `sendMessage(msg,{body})`.
+   - Vercel AI Gateway; `MODEL_ID` = `nvidia/nemotron-3.5-lightning-free` (free, ~5 req/min, reasoning model: thinks silently 10–45 s then sends whole answer as ONE delta, ignores schema key names, can emit malformed JSON fragments in strings).
+   - Supabase Postgres (service role, RLS deny-all) + private Storage bucket `assets`; migrations 0001 (+grants), 0002, 0003; PostgREST JSON-path filters used for optimistic claim.
+   - Firecrawl (`@mendable/firecrawl-js` 4.54.0): scrape branding+markdown.
+   - fal.ai queue API over plain `fetch`: `https://queue.fal.run/google/nano-banana-2.1/edit`, `Authorization: Key …`; submit → 200 IN_QUEUE; poll status_url (202 IN_PROGRESS / 200 COMPLETED); result `images[0]`; ~17–22 s per image; 403 `{"detail":"User is locked. Reason: Exhausted balance…"}` when out of credit.
+   - Playwright projects `mocked` and `live` (+ `E2E_BASE_URL` for deployed run), stateful fake backend (`fakeBackend` in e2e/helpers.ts), Node's built-in test runner for unit tests (`npm run test:unit`, `node --test "e2e/unit/*.test.ts"`, `allowImportingTsExtensions`), pure modules importable without `server-only`.
+   - Design principles: server decides step transitions (`sessions.status`: site/goal/building/live; `advanceStatus`), tools never throw, events written by server code, model text clipped server-side (`clip()`, no schema `max()`), tolerant key reading (`field()`), `cleanModelText`, deterministic fallbacks (fallbackPage/fallbackPlaybook/text-only ad card), claim + cap of 3 generations per session, signed URLs only (private bucket), fal output copied into own storage (fal URLs never stored), photo shrunk in browser (1,600 px JPEG) and checked by magic bytes on server.
+
+3. Files and Code Sections (most important; all under /Users/huanchen/Documents/ploy-ftu):
+   - `src/app/api/artifact/generate/route.ts`: generate route. Guards (400/404/409 wrong_step/limit/busy/saved), `claimGeneration`, ad branch (photo + fal via `generateAdImage`, download, copy to storage, else text-only card with reason; `done()` returns saved boolean and 409 if not saved), page/playbook branch: `streamText({ model: process.env.MODEL_ID ?? ..., system: PAGE_PROMPT|PLAYBOOK_PROMPT, prompt, output: Output.object(...), abortSignal: AbortSignal.timeout(50_000), maxRetries: 1, onError })` and a `TransformStream` whose `flush` awaits `result.output` (fallback `extractJson(await result.text)`), validates (`validatePage`/`validatePlaybook`), saves via `finishGeneration` before the response closes; failure reasons rate_limited/timeout/invalid_output/unknown/no_profile; `export const maxDuration = 60;` (line 20); fal deadline `Math.min(40_000, 50_000 - (Date.now() - started))` (line 117); `detail = "FAL_KEY is not set in this environment"` when photo but no key.
+   - `src/lib/artifact-store.ts`: `MAX_GENERATIONS = 3`, `const CLAIM_TTL_MS = 60_000;` (line 12; used lines 75 and 182), `claimGeneration` (optimistic conditional write; returns `previousImagePaths`), `finishGeneration` (writes only if session still `building` and claim stamp matches; `imagePaths`), `getArtifact`, `isClaimActive`, `cleanupDraft` (deletes draft row, images, photo, forgets `content.photo`), `loadArtifactInput` (returns `photoPath`).
+   - `src/components/steps/build-step.tsx`: BuildStep (intro/generating/preview/saved), `useObject` for page/playbook, ad via fetch, time-based progress steps (STEP_SECONDS 7), `const GIVE_UP_SECONDS = 75;` (line 33), copy "These steps are a guide, not exact progress. It can take up to a minute." (line 95) and intro "It can take up to a minute." (line 395), `fallbackNote()` (the "That took too long, so we used a standard version…" text), `MAX_GENERATIONS = 3`, hand-off link with keepalive POST /api/handoff, Start over uses `resetSession`.
+   - `src/components/steps/site-step.tsx`: step 1; UNCOMMITTED fix adds `hasText`, `hasResearchPart`, `researchDone`, `showReading = busy && !hasResearchPart && !hasText`, `showSummarizing = busy && researchDone && !hasText`, labels "Reading {domain}…", "Thinking…", "Summarizing what we found…".
+   - `e2e/loading.mocked.spec.ts` (new, uncommitted): streaming stub HTTP server (silent reasoning → tool result → silent reasoning → text) used via `route.continue({url})`; 2 tests; verified fail on old code, pass on fix.
+   - `src/lib/goals.ts`: GOAL_TYPES (3), DEFAULT_GOALS, GOAL_CATALOG (artifactType + handoff with placeholder hrefs), `recommendedGoal`, `clip`, `LIMITS`, `cleanModelText` (cuts at `{ } [ ]`, `","`, `":` or word goalType), `cleanStoredGoal`, `normalizeGoals`, `suggestGoalsInput`, `chooseGoalBody`, `SessionState` type (incl. `photo`, `artifact`).
+   - `src/lib/artifact/` (pure): `types.ts` (asString cleans model text, `field()`, `extractJson`, `Validated`), `page.ts`, `playbook.ts` (loose zod model schemas, validators filling gaps from fallbacks, limits), `ad.ts` (`buildAdHeadline`, `buildImagePrompt` re-validating accent/headline, `sniffImageType`), `theme.ts` (`deriveTheme`, `normalizeAccent`), `prompt.ts` (`buildArtifactInput`), `fal-client.ts` (pure queue client, typed failure reasons, same-origin URL check, key scrubbed), `fixtures.ts`.
+   - `src/lib/fal.ts` (server-only: `falConfig()` from FAL_KEY/FAL_MODEL_ID/FAL_BASE_URL, `downloadGeneratedImage`), `src/lib/artifact-storage.ts` (upload/signed URL/remove), `src/app/api/uploads/photo/route.ts`, `src/app/api/artifact/save/route.ts`, `src/app/api/handoff/route.ts`, `src/app/api/step/back/route.ts` (cleanup, 409 saved), `src/app/api/goals/suggest|choose/route.ts`, `src/app/api/sessions/[id]/route.ts`, `src/lib/session-state.ts` (`loadSessionState` incl. artifact/photo/signed imageUrl, cleans stored goals/summary), `src/lib/prompts.ts` (SYSTEM_PROMPT, GOALS_PROMPT, PAGE_PROMPT, PLAYBOOK_PROMPT with exact JSON keys), `src/lib/events.ts`, `src/lib/image-client.ts` (downsizeToJpeg), `src/components/artifact/*` (PagePreview, PlaybookView, AdCard, BrandMark), `src/app/dev/artifact-fixtures/page.tsx` (dev only, 404 in prod), `src/app/page.tsx` (shell; BuildStep keyed by goalType), `src/components/steps/goal-step.tsx`, `supabase/migrations/0001..0003`, `supabase/queries/activation.sql`.
+   - Tests: `e2e/unit/goals.test.ts`, `artifact.test.ts`, `fal-client.test.ts` (48 unit tests), mocked specs (onboarding, goals, artifact-preview, build-step, loading; 68 total), live specs (`onboarding.live.spec.ts`, `goals.live.spec.ts`, `artifact.live.spec.ts`; fal test skipped unless `RUN_FAL=1`), `e2e/helpers.ts` (fakeBackend, goals3, seedSession, makePng, assetStatus…).
+   - `NOTES.md` (decision log, per-AC results, model constraints, fal research/first real call, bugs found, free-model catalog findings), `SPEC-M3.md`, `docs/next/*` (deferred specs), `transcripts/02-claude-code-milestone1-ui-and-tests.md` + README (cleaned export, secrets/email redacted; last refreshed mid-M3 step 5).
+   - Memory files written: `/Users/huanchen/.claude/projects/-Users-huanchen-Documents-ploy-ftu/memory/feedback_fal_credit.md`, `feedback_playwright_serial.md`, `MEMORY.md`.
+
+4. Errors and fixes:
+   - Supabase "permission denied for table sessions": added service_role grants to migration 0001 (user applied).
+   - Migration 0002 pasted partially (`begin` read as transaction): rewrote as plain statements (drop constraint if exists + add); same style for 0003.
+   - Stale Turbopack module after adding exports (`buildGoalTools is not a function`): restart dev server after adding new exports.
+   - Labels/category cut mid-phrase by schema `max()`: removed max from model-facing schemas, added `clip()` (word-boundary trim, no dangling "and/for"); removed `category` from goals call.
+   - Stale test counts (expected 4 suggestions / 5 cards): fixed (`toHaveCount(5, {timeout})` missed by search-replace).
+   - Two Playwright runs at once clobbered `test-results` (ENOENT traces): never run Playwright in parallel (saved as memory).
+   - Real model returned good content with its own capitalised keys → strict parse failed → fallback saved: prompts spell out exact keys, validators read keys tolerantly (`field()`), route parses raw text via `extractJson`.
+   - Reasoning model gives one chunk: documented; progress steps time-based.
+   - fal 403 Exhausted balance (first call, and again locally after my earlier test calls used credit): user topped up; local works. I disclosed I'd made 4 real fal calls earlier before being told to stop.
+   - Hydration race: broken image on SSR page didn't trigger `onError`: added `complete && naturalWidth === 0` check in AdCard/BrandMark.
+   - Test locator matching two `aria-current="step"` elements: scoped to the Progress status.
+   - Leaked JSON in goal card (found by user's manual test): `cleanModelText`/`cleanStoredGoal`; my first live test regex matched normal `},{` between objects (fixed to check the exact string); `","` string-boundary case initially missed (fixed).
+   - Missing loading state during research (user feedback): `showReading`/`showSummarizing` fix with streaming-stub test; verified test fails on old code.
+   - Deployed site "Image creation isn't set up yet" = FAL_KEY not in Vercel runtime env (user to check Production box/name; redeploy); log detail added.
+   - Page generation timeout (51.2 s > 50 s cap): research done; user chose to raise limit to 60 s.
+   - Early mistake in a Bash command (`sed -i` with newline, zsh `${!n}`, foreground `sleep` blocked): worked around.
+
+5. Problem Solving:
+   - Solved/verified: M1, M2 deployed and verified on production; M3 steps 1–6 built, tested (unit 48, mocked 68, live artifact spec 13 passed + 1 skipped fal), committed and pushed (last pushed commit 04128db "Fix raw JSON leaking into model-written text; clearer not_configured detail").
+   - Ongoing: deployed site lacks FAL_KEY at runtime; timeout tuning (50 s→60 s with coupled values); wording of fallback note; possible benchmark of `reasoning` effort `none/low` on current model and of `reflection/beam-free`; step 7 deployed-URL verification and final per-AC results in NOTES; headline/fidelity check still short of the spec's 5 real-product runs (so far 3 correct headlines; loaf recognizable but re-photographed from a new angle).
+
+6. All user messages:
+   - "based on the SPEC.md, guide me through the setup"
+   - "first let's create a commit"
+   - "i've completed the setup by filling out the .env.local file"
+   - "done" (after SQL grants)
+   - "added the card, try again"
+   - "i've picked a free one nvidia/nemotron-3.5-lightning-free. take notes that it but tool-calling reliability varies by model"
+   - "add the test results to SPEC.md, and commit the changes" (tool use rejected) then "commit and update NOTES with the backend test results"
+   - "build the UI first, first tell me what needs to be built and how you plan to test it afterwards"
+   - "what's the error state for the rate limiter?" / "can you make it clear that it's the rate limiting issue because of free tier model"
+   - "commit it and start on the UI"; "commit these and continue with page.tsx"
+   - "where do you put the sessionId so that any components can easily have access to it" / "yes, i think it makes sense to put it in a context instead of doing it the hacky way, take notes of this."
+   - "let's add Playwright for browser testing"; "commit all of this"; "show me the live test results"
+   - "in the page.tsx, how does it manage different steps ?"
+   - "push it and update the notes, also add the claude code chat to the transcripts folder"; "done" (git auth) 
+   - "now run the server locally and let me test it manually"
+   - "is there a way to go back from the second page to the first page after the 'research-stie' is done?"; "yes, add the link"
+   - "how do i go to the next step after research site is done"; "yes, agreed. lets finish milestone 1 and deploy to vercel"
+   - "deployed, and it works as expected after my manual testing."; "https://ploy-ftu-pn3w.vercel.app/"
+   - "user another agent to create a SPEC file for milestone 2" (subagent); "does POST /api/goal call the tool to get goals?"; "that's very confusing, yeah let's rename them, also 2 suggested goals are not enough, let's give at least 4 options"; "take notes of the decisions i've made"; "use subagent to investigate on milestone 3…" etc.
+   - "i think we should only support user upload" → later "actually let's do this B. Scrape only for the MVP…" → "and we can do this for later iteration - A. Scrape first, upload as fallback…" → "yes, let's do that" (spawn two agents) → pasted take-home brief (primitives: PloyDB, Ploybooks, sites, brand guidelines, integrations, ads, analytics) → "now think again about the goals we want to cover in the MVP" → "shouldn't the two goals be linked to one of the primitives?" → pasted PloyDB description, pasted Ploybooks description → "yes to all 4" → "review what the goals are and how they map to different primitives" → "yes, to all, let's try that first, we can iterate later"
+   - "can we take a step back, i feel we are making it more complicated than it should be for mvp. could you take a look at the suggestions below" (pasted three-goal one-artifact suggestion) → "Adopt the three-goal… - yes / Ad photo: upload now - yes / Replace our four goal types… - yes / it's already past 8:20, we can rewrite the spec. one clarifying question, we don't allow users to pick a goal, do we??" → "yeah, let's go with option a， take notes of the decision made"
+   - Review of spec choices: "sounds good… we can discuss it later, but let's keep it like this for now… i think we should create link to different ploy primitives (use fake link for now)"; "for photo upload, does it go through the server, or it gets a presigned url…?"; "yes, keep it, commit and take notes of this, we will discuss tradeoff of this in review"; "yeah push it"
+   - "start step 1"; "run the 0003 sql in supabase"; "i already ran it"; "migration ran, commit step 1 and continue"; "commit step 5 and continue to step 6" style requests; "why pick 200 for summary"; "commit step 4 and continue to step 5"; "commit it and start on the UI"; etc. (commit/push requests for each step: steps 1,2,3,4,5,6)
+   - "yes, i've added it in vercel as well, i didn't add the credit card info in the fai ai so it may fail just fyi， now start the implementation"
+   - "i've added credit to fal ai"; "now save the transcript of our chat"; "use a light time-based version - don't run live test to call fal ai yet, since it consumes credit"; "i will manually test it with a real photo once it's deployed"; "commit and push step 6"
+   - Screenshot: "it shows the raw goalType"
+   - "after i upload this photo, it says 'Image creation isn't set up yet, so here is a text-only card.'" (with bread photo and screenshot)
+   - "where can i add FAL_KEY in Vercel"; "still got the error"; "deploy locally"; "hmm, when i run it locally , got the same error"; "i already top up fal"; "let's push the change first"
+   - "looks like it works locally now / why waiting for the research result to return, there's no loading state"
+   - "subagent - i got this message 'That took too long, so we used a standard version. You can try again.' when generating a site"
+   - "take notes of this 'The page generation took 51.2 seconds, over the 50-second cap…'"
+   - "what do you mean by a standard version??"
+   - "is there any other free models i can consider to use"
+   - "let's change the limit from 50s to 60s" (latest)
+   - Standing constraints stated by the user: don't run live tests that call fal.ai ("since it consumes credit"); user will manually test with a real photo after deploy; never paste keys in chat (assistant guidance); user wants explicit commit/push requests honored only when asked.
+
+7. Pending Tasks:
+   - Implement "change the limit from 50s to 60s" coherently (see section 9), test, record in NOTES/SPEC, then ask whether to commit/push (uncommitted work exists: loading-state fix in site-step.tsx, e2e/loading.mocked.spec.ts, NOTES.md edits, plus the new limit change).
+   - Possibly change the fallback wording ("standard version" → "The AI took too long, so this is a basic template instead. You can try again.") if the user approves (offered, not yet approved).
+   - Offered but unapproved: don't-count-timeouts-as-tries (+ hard cap 6); benchmark of reasoning effort / alternative free models (nemotron none/low, reflection/beam-free low); free-model benchmark uses only free-model requests, no fal.
+   - Deployed site: user must confirm FAL_KEY is in Vercel (Production ticked) after the 04128db deploy; then verify.
+   - M3 step 7: run mocked suite and live tests (EXCEPT the fal test, `RUN_FAL=1` must not be set) against the deployed URL, write per-AC results in NOTES, refresh the transcript; the headline/fidelity check on real product photos is open (3 correct headlines so far; user will test manually).
+   - Known gaps: stuck claim for the TTL after a crash counts toward the cap; `filled` not stored; `blocked` reason unused.
+
+8. Current Work:
+   Immediately before the summary request, I was starting the user's latest request "let's change the limit from 50s to 60s". I explained that the model abort and the function limit are coupled and ran a grep to find the constants. Findings (no edits yet): `src/lib/artifact-store.ts:12 const CLAIM_TTL_MS = 60_000;` (used at lines 75 and 182); `src/app/api/artifact/generate/route.ts:20 export const maxDuration = 60;`, `:117 deadlineMs: Math.min(40_000, 50_000 - (Date.now() - started))` (fal path), `:170 abortSignal: AbortSignal.timeout(50_000), // a reasoning model can think for 45 s before it answers`; `src/components/steps/build-step.tsx:33 const GIVE_UP_SECONDS = 75;`, `:95` and `:395` "It can take up to a minute." copy. My plan: create `src/lib/artifact/limits.ts` exporting `MODEL_TIMEOUT_MS = 60_000`, `CLAIM_TTL_MS = 95_000`, `CLIENT_GIVE_UP_SECONDS = 100`, `ROUTE_MAX_DURATION_SECONDS = 90`; set route `maxDuration = 90` (literal required by Next) and `AbortSignal.timeout(MODEL_TIMEOUT_MS)`; import TTL/give-up constants in artifact-store/build-step; change copy to "It can take a minute or more."; add a unit test asserting invariants (route's maxDuration literal vs limits, TTL > maxDuration > timeout + save margin, client give-up > timeout) by reading the route source; update NOTES/SPEC-M3 (FR-21/NFR latency lines). Important caveat to tell the user: `maxDuration` above 60 needs Vercel Fluid compute (the agent read that Hobby with Fluid allows 300 s default/max; whether this project has Fluid enabled is unverified) — if not enabled, the deploy could be rejected; so check before pushing. Do not push without being asked. The fal ad path deadline (40 s) is separate and unchanged.
+
+9. Optional Next Step:
+   Carry out the user's latest request: "let's change the limit from 50s to 60s" — implement the coupled change described in section 8 (abort 50→60 s, with `maxDuration` raised to 90, `CLAIM_TTL_MS` to 95 s, client give-up to 100 s, copy updated, invariant unit test, NOTES/SPEC updates), run lint/tsc/unit tests/mocked suite (one Playwright command at a time, no fal), then report the Fluid-compute caveat and ask whether to commit and push together with the pending loading-state fix. Do not run any fal-calling test, and do not push without the user's say-so.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/huanchen/.claude/projects/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
+
+The messages after this summary are the most recent messages from before compaction, kept verbatim. The summary was written without seeing them, so something it says has not happened yet may already have happened in them.
+
+> **Write**: /Users/huanchen/Documents/ploy-ftu/src/lib/artifact/limits.ts
+
+> **Read**: /Users/huanchen/Documents/ploy-ftu/src/app/api/artifact/generate/route.ts
+
+> **Read**: /Users/huanchen/Documents/ploy-ftu/src/lib/artifact-store.ts
+
+> **Read**: /Users/huanchen/Documents/ploy-ftu/src/components/steps/build-step.tsx
+
+> **Edit**: /Users/huanchen/Documents/ploy-ftu/src/app/api/artifact/generate/route.ts
+
+> **Edit**: /Users/huanchen/Documents/ploy-ftu/src/app/api/artifact/generate/route.ts
+
+> **Edit**: /Users/huanchen/Documents/ploy-ftu/src/app/api/artifact/generate/route.ts
+
+> **Edit**: /Users/huanchen/Documents/ploy-ftu/src/lib/artifact-store.ts
+
+> **Edit**: /Users/huanchen/Documents/ploy-ftu/src/lib/artifact-store.ts
+
+> **Edit**: /Users/huanchen/Documents/ploy-ftu/src/components/steps/build-step.tsx
+
+> **Edit**: /Users/huanchen/Documents/ploy-ftu/src/components/steps/build-step.tsx
+
+> **Edit**: /Users/huanchen/Documents/ploy-ftu/src/components/steps/build-step.tsx
+
+> **Edit**: /Users/huanchen/Documents/ploy-ftu/src/components/steps/build-step.tsx
+
+> **Bash**: grep -rn "up to a minute" e2e src | cut -c1-160; head -12 e2e/unit/artifact.test.ts
+
+> **Write**: /Users/huanchen/Documents/ploy-ftu/e2e/unit/limits.test.ts
+
+> **Bash**: npx tsc --noEmit 2>&1 | head; npm run lint 2>&1 | tail -5; npm run test:unit 2>&1 | grep -E "^# (tests|pass|fail)"
+
+> **Bash**: npm run test:unit 2>&1 | tail -12; grep -n "50 s\|50-second\|50 seconds\|FR-21\|up to a minute\|60 s" SPEC-M3.md NOTES.md | cut -c1-200 | head -20
+
+## Assistant
+
+Tests pass (51 unit, tsc and lint clean). Now I'll record the change in NOTES.
+
+> **Bash**: sed -n 595,606p NOTES.md | cut -c1-260; tail -5 NOTES.md | cut -c1-200
+
+> **Bash**: python3 - <<'EOF' p='NOTES.md' s=open(p).read() marker="## Free models available through the Vercel AI Gateway" add="""### Decision: model wait raised from 50 s to 60 s (user's choice, 2026-11-24) - The limits depend on each other, so they now live in `src/lib/artifact/limits.ts`: model wait **60 s* …
+
+## Assistant
+
+Now the mocked suite, run on its own, with no fal calls.
+
+> **Bash**: npx playwright test --project=mocked 2>&1 | tail -8
+
+## Assistant
+
+The model wait is now 60 s. I also moved the limits that depend on it, so a slow run still saves its fallback. Unit tests (51), tsc, lint and the mocked suite (68) pass. Nothing is committed or pushed. I didn't run any live or fal tests.
+
+| Limit | Before | Now |
+|---|---|---|
+| Model wait | 50 s | **60 s** |
+| Function limit (`maxDuration`) | 60 s | 90 s |
+| Claim expiry | 60 s | 95 s |
+| Browser gives up | 75 s | 100 s |
+
+If the function limit stayed at 60 s, Vercel would kill the request just as the model wait ended, before the fallback was saved. Claim expiry and browser give-up have to stay above the function limit for the same reason.
+
+- **Where the numbers live:** they're now in [limits.ts](src/lib/artifact/limits.ts). The route's `maxDuration` has to be a literal, so [limits.test.ts](e2e/unit/limits.test.ts) checks that it matches the file and that the order holds.
+- **Wait note:** it now says "It can take a minute or more."
+- **NOTES:** the decision and the risk below are recorded there.
+
+A `maxDuration` above 60 s needs Vercel Fluid compute. I haven't verified that your project has it on. If it's off, Vercel may reject the deploy or cap the function at 60 s. In that case a run that takes longer than about 60 s would be killed with nothing saved. You can check under Project Settings → Functions (Fluid compute) before pushing.
+
+I haven't touched these:
+- The fallback wording. I'd suggest "The AI took too long, so this is a basic template instead. You can try again."
+- Not counting a timeout as one of the 3 tries.
+- The free-model benchmark.
+
+Do you want me to commit and push this together with the loading-state fix?
+
+## User
+
+never mind, change the limit to 55s
+
+> **Bash**: python3 - <<'EOF' import re def sub(p,a,b): s=open(p).read(); assert a in s,(p,a); open(p,'w').write(s.replace(a,b)) L='src/lib/artifact/limits.ts' sub(L,'MODEL_TIMEOUT_MS = 60_000','MODEL_TIMEOUT_MS = 55_000') sub(L,'ROUTE_MAX_DURATION_SECONDS = 90','ROUTE_MAX_DURATION_SECONDS = 60') sub(L,'CLAIM_T …
+
+## Assistant
+
+The model wait is now 55 s. tsc and lint are clean and the 51 unit tests pass. I didn't re-run the mocked suite after this change, and nothing is committed or pushed.
+
+| Limit | Before | Now |
+|---|---|---|
+| Model wait | 50 s | **55 s** |
+| Function limit (`maxDuration`) | 60 s | 60 s |
+| Claim expiry | 60 s | 65 s |
+| Browser gives up | 75 s | 70 s |
+
+55 s also removes last turn's Vercel risk. `maxDuration` stays at 60 s, so the project doesn't need Fluid compute. That leaves about 5 s to save the fallback after the model gives up. That's a couple of database writes, so it should be enough, but the margin is tighter than before. If you ever see a slow run end with nothing saved, that margin is the first thing to check.
+
+I updated [limits.ts](src/lib/artifact/limits.ts), the unit test margin (now 5 s) and the NOTES entry. The wait note still reads "It can take a minute or more." The fal ad deadline and the fallback wording are unchanged. Counting a timeout as one of the 3 tries is also unchanged.
+
+Do you want me to commit and push this together with the loading-state fix?
+
+## User
+
+take notes of why we picked 55s instead of 60s
+
+> **Bash**: python3 - <<'EOF' p='NOTES.md' s=open(p).read() a="- The limits depend on each other, so they live in `src/lib/artifact/limits.ts`: model wait **55 s**" assert a in s why="""- **Why 55 s and not 60 s:** the model wait and the function limit are tied. If the wait were 60 s with `maxDuration = 60`, Ve …
+
+## Assistant
+
+I added the reasoning to the NOTES.md entry "Decision: model wait raised from 50 s to 55 s" ([NOTES.md:609](NOTES.md#L609)).
+
+- **The two limits are tied.** With a 60 s model wait and a 60 s function limit, Vercel would kill the function at the moment the wait ends. The fallback wouldn't be saved, and the user would see an error.
+- **A safe 60 s wait would need a longer function limit.** We tried 90 s, but anything over 60 s needs Vercel Fluid compute, and we haven't confirmed that's on for this project.
+- **55 s avoids that.** The function limit stays at 60 s, so there's no platform dependency and no deploy risk. That leaves 5 s to save the fallback.
+- **It would have fixed the case you hit.** The run that failed took 51.2 s, which now succeeds. The change adds 5 s over the old 50 s cap.
+- **When to revisit.** Revisit if Fluid compute is confirmed, which would allow 60 s or more with a 90 s limit. Also revisit if the model is swapped for a faster one.
+
+The notes edit isn't committed either. Do you want me to commit and push everything together (the 55 s change, the loading-state fix and the notes)?
+
+## User
+
+commit and push everything
+
+> **Bash**: git add -A && git status --short && git commit -q -m "Show loading states during research; model wait 55 s with shared limits - site step: show Reading/Thinking/Summarizing labels while the silent reasoning model works (streaming-stub test) - generation limits in one file (model wait 55 s, function  …
+
+## Assistant
+
+I committed everything and pushed it to main as `a79113c`. That commit includes the loading-state fix, the 55 s limits change with its unit test, and the NOTES updates. Vercel should start a new deploy from it.
+
+I didn't re-run the mocked suite after the 55 s change. It passed (68 tests) on the earlier 60 s version, and the unit tests, tsc and lint pass on the final code.
+
+After the deploy, please check two things:
+- **FAL_KEY:** it should now reach the runtime. The key needs Production ticked and the exact name `FAL_KEY`. Then try the photo upload again.
+- **Page generation:** try one landing-page run to see the 55 s wait in action.
+
+Tell me what you see. After that I can move on to step 7, the deployed-URL verification and the per-AC results in NOTES.
+
+## User
+
+improvement, why all the links doesn't show a hand when hover?
+
+> **Bash**: grep -n "cursor" src/app/globals.css src/components/ui/button.tsx | cut -c1-220; grep -rn "<a \|<a$\|variant=\"link\"" src --include=*.tsx | cut -c1-170 | head -20
+
+> **Bash**: grep -n "cursor" src/app/globals.css src/components/ui/button.tsx | cut -c1-220; grep -rnE "<a |variant=\"link\"|<button" src --include="*.tsx" | cut -c1-170 | head -20
+
+> **Bash**: grep -rn "href=" src --include="*.tsx" | cut -c1-170; grep -n "@layer base" -A12 src/app/globals.css; sed -n 1,40p src/components/ui/button.tsx | cut -c1-200
+
+> **Bash**: python3 - <<'EOF' p='src/app/globals.css' s=open(p).read() a=""" html { @apply font-sans; } }""" b=""" html { @apply font-sans; } /* Tailwind 4 no longer gives buttons a pointer cursor, so say it once here for everything clickable. */ button:not(:disabled), [role="button"]:not([aria-disabled="true"] …
+
+> **Bash**: sleep 3; curl -s -o /dev/null -w "%{http_code}\n" localhost:3000; tail -3 /private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/tasks/bj0322b32.output | cut -c1-160
+
+## Assistant
+
+Buttons and links showed the normal arrow because Tailwind 4 no longer gives them a pointer cursor, and the shadcn button never set one. I've added one rule in [globals.css](src/app/globals.css) that covers every clickable element:
+
+- **Pointer (hand):** buttons, links with an href, the goal radio cards (they're buttons with `role="radio"`), labels and summaries.
+- **Not-allowed:** disabled buttons, so a greyed-out one doesn't look clickable.
+
+The dev server still returns 200 on the page. I haven't hovered over anything in a browser yet, so please hover a button, the "Change my goal" link and a goal card locally to confirm. I haven't run any tests for this, and it isn't committed. Do you want me to commit and push it?
+
+## User
+
+commit and push it, i will test them manually
+
+> **Bash**: git add -A && git status --short && git commit -q -m "Pointer cursor on buttons, links and goal cards; not-allowed when disabled Tailwind 4 no longer sets cursor: pointer on buttons, so set it once in the base layer. Co-Authored-By: Claude Sonnet 5.5 <[email]>" && git push 2>&1 | tail  …
+
+## Assistant
+
+I committed the cursor fix and pushed it to main as `4ff6f03`. The commit changes only [globals.css](src/app/globals.css). Vercel should start a new deploy from it.
+
+When you test, check these:
+- **Hover cursor:** buttons, the "Change my goal" link, the goal cards and the hand-off link should show the hand.
+- **Disabled state:** a disabled button, such as Continue before you've picked something, should show the not-allowed cursor.
+
+If any element still shows the arrow, tell me which one and I'll fix it.
+
+## User
+
+one requirement is - Clear data model, sane server/client split, streaming done right. however, it doesn't seems we support streaming in this app, pls confirm
+
+> **Bash**: grep -rnE "streamText|generateText|useChat|useObject|createUIMessageStreamResponse|toUIMessageStreamResponse|createTextStreamResponse" src --include="*.ts" --include="*.tsx" | cut -c1-170
+
+## Assistant
+
+I can't confirm that. The app does support streaming in two places, but with the free model you can't see it, and that may be why it looks like there's none.
+
+**Where it streams (in the code):**
+- **Step 1, site research** ([chat/route.ts](src/app/api/chat/route.ts)): `streamText` sends text and tool parts through `createUIMessageStreamResponse` to `useChat` in [site-step.tsx](src/components/steps/site-step.tsx). The tool call appears as a part as soon as it starts, and the summary text is meant to arrive in pieces.
+- **Page and playbook generation** ([generate/route.ts:167](src/app/api/artifact/generate/route.ts#L167)): `streamText` with `Output.object` sends a text stream to `useObject` in [build-step.tsx:131](src/components/steps/build-step.tsx#L131). The preview is meant to fill in field by field as partial objects arrive. The route saves the result before the stream closes.
+
+**Where it doesn't stream, on purpose:**
+- The goals suggestion ([goals/suggest/route.ts](src/app/api/goals/suggest/route.ts)) uses `generateText` and a plain JSON response. The cards need all 4 goals validated and saved before they show, so there is nothing useful to show half-way. The ad is one fal call, which has no partial result.
+
+**Why you probably see none:**
+- **Silent model:** `nvidia/nemotron-3.5-lightning-free` thinks silently for 10 to 45 s and then sends its whole answer as one chunk. The pipeline streams, but the user sees nothing and then everything.
+- **Time-based progress steps:** that is why the build screen's progress steps run on a timer. It is also why the loading-state fix for step 1 was needed. A model that streams normally would show text and the page filling in.
+- **Test coverage:** the streaming-stub test in [loading.mocked.spec.ts](e2e/loading.mocked.spec.ts) fakes the silent-then-one-chunk behaviour. No test checks incremental rendering from a model that streams in small pieces.
+
+Two things would settle it:
+1. **Check streaming for real:** run the benchmark of a model that does stream, such as `reflection/beam-free`, and log chunk timings for a page generation. I'd add the check to the tests and NOTES. It only calls free models, never fal. Say if you want it.
+2. **Record it as a decision:** NOTES currently says the model sends one chunk, but it doesn't say that the streaming design is intentional and that the free model hides it. I'd add a short entry with the table above, which is worth having for the "streaming done right" requirement. Say if you want that too.
+
+## User
+
+can you double check that streaming is implemented correctly in react
+
+> **Read**: /Users/huanchen/Documents/ploy-ftu/src/components/steps/site-step.tsx
+
+> **Read**: /Users/huanchen/Documents/ploy-ftu/src/components/steps/build-step.tsx
+
+> **Read**: /Users/huanchen/Documents/ploy-ftu/src/app/api/chat/route.ts
+
+> **Bash**: grep -n "stream\.\|PartialPage\|PartialPlaybook\|isLoading" src/components/steps/build-step.tsx | cut -c1-190; grep -n "Partial\|partial" src/components/artifact/page-preview.tsx src/components/artifact/playbook-view.tsx | cut -c1-170 | head -20; sed -n 160,215p src/app/api/artifact/generate/route.t …
+
+> **Bash**: f=$(ls node_modules/@ai-sdk/react/dist/index.js); grep -n "safeValidateTypes\|onFinish\|onError\|AbortController\|abort" $f | sed -n 1,60p | cut -c1-170; grep -n "failureFromMessage" -A8 src/components/steps/build-step.tsx | head -16; sed -n 318,345p src/components/steps/build-step.tsx | cut -c1-200
+
+> **Bash**: sed -n 10,84p node_modules/@ai-sdk/react/dist/index.js | cut -c1-200
+
+> **Bash**: grep -n "chunk\|partial\|stream" e2e/build-step.mocked.spec.ts e2e/helpers.ts | cut -c1-170 | head -20
+
+## Assistant
+
+I read the client code and the two streaming routes, and checked the `useObject` source in `node_modules`. The React side is correct in the ways that matter, with two small gaps and one gap in test coverage. I didn't change any code.
+
+**What is correct**
+- **Chat (step 1):**
+  - One module-level transport sends `sessionId` per call, so it can't go stale.
+  - Loading state comes from `status` (`submitted` or `streaming`), not only `submitted`. This is the fix for the silent reasoning model.
+  - `stop()` runs before the reset in `startOver`.
+  - Tool parts are read by `state` (`output-available`), and the server decides the next step.
+- **Build step (page and playbook):**
+  - `useObject` renders partial objects through the `Partial*` types, so the preview can fill in field by field.
+  - Validation of the final object happens only in `onFinish`, and `onFinish` always calls `onChange()` to read the saved draft back.
+  - I confirmed this in the SDK: a client-side schema failure goes to `onFinish`, not `onError`. So if the model ignores key names and the client rejects the final object, the user still gets what the server saved. This matters because the server validates tolerantly and the client schema is strict.
+  - `stream.clear()` runs before each `submit`.
+- **Server:** the generate route saves in the stream's `flush`, before the response closes, so the client's refresh always finds the row. The chat route uses the stream helpers correctly and returns a readable error message.
+
+**Gaps**
+1. **Chat route ignores client disconnect:** [chat/route.ts](src/app/api/chat/route.ts) doesn't pass `abortSignal: req.signal` to `streamText`. When the user clicks "Use a different website" and `stop()` aborts the fetch, the server keeps scraping and calling the model. On the free tier that spends rate limit for nothing. The fix is one line. The generate route should not get it. If the client leaves, `flush` may never run, and the claim would stay stuck until it expires.
+2. **No cleanup on unmount:** `useObject` doesn't abort when `BuildStep` unmounts, for example on "Change my goal" mid-generation. The request finishes on the server and then calls `onChange()` from a screen the user has left. It's harmless today. A cleanup effect calling `stream.stop()` would tidy it.
+
+**Test coverage gap:** the mocked tests send the whole answer as one chunk, so nothing proves the preview fills in incrementally. The same hole exists for chat text. I'd add a stub that sends the JSON in small timed pieces and asserts that the headline appears before the later sections. That would also back up the "streaming done right" claim without needing a different model.
+
+Do you want me to make the one-line chat fix, the unmount cleanup, and the incremental-rendering test?
+
+## User
+
+yes, do all three
+
+> **Bash**: cat e2e/loading.mocked.spec.ts; sed -n 1,60p e2e/build-step.mocked.spec.ts | cut -c1-200; grep -n "export" e2e/helpers.ts | cut -c1-150
+
+> **Bash**: sed -n 1,60p src/components/artifact/page-preview.tsx | cut -c1-180; grep -n "PAGE\b" -A14 src/lib/artifact/fixtures.ts | head -30; grep -n "function Working" -A22 src/components/steps/build-step.tsx | cut -c1-170; sed -n 27,45p src/lib/artifact/page.ts
+
+> **Write**: /Users/huanchen/Documents/ploy-ftu/e2e/streaming.mocked.spec.ts
+
+> **Edit**: /Users/huanchen/Documents/ploy-ftu/src/app/api/chat/route.ts
+
+> **Edit**: /Users/huanchen/Documents/ploy-ftu/src/components/steps/build-step.tsx
+
+> **Bash**: npx tsc --noEmit 2>&1 | grep -v "^npm"; npm run lint 2>&1 | grep -iE "error|warning" | head; npx playwright test --project=mocked e2e/streaming.mocked.spec.ts 2>&1 | tail -30
+
+> **Bash**: cp src/components/steps/build-step.tsx /tmp/bs.bak 2>/dev/null; B=src/components/steps/build-step.tsx; cp $B $TMPDIR/bs.bak 2>/dev/null || cp $B /private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/scratchpad/bs.bak; S=/private/tmp/claude-501/-Users-huanche …
+
+## Assistant
+
+The mutation check worked: with partial rendering disabled the new test fails, and I've restored the file. Now the full mocked suite, then NOTES.
+
+> **Bash**: npx playwright test --project=mocked 2>&1 | tail -4; npm run test:unit 2>&1 | grep -E "^ℹ (pass|fail)"
+
+> **Bash**: python3 - <<'EOF' p='NOTES.md' s=open(p).read() marker="## Free models available through the Vercel AI Gateway" add="""## Streaming review (2026-11-24) The brief asks for "streaming done right". Reviewed on request; the free model hides the streaming (one chunk after silent thinking), so it was easy …
+
+## Assistant
+
+All three changes are in and tested. Nothing is committed yet. tsc and lint are clean, and the mocked suite passes (70 tests, including 2 new ones). The 51 unit tests pass. I didn't run any live or fal tests.
+
+1. **Chat route:** [chat/route.ts](src/app/api/chat/route.ts) now passes `abortSignal: req.signal` to `streamText`. Clicking "Use a different website" (or closing the tab) now stops the scrape and the model call. I left the generate route alone on purpose. If the client leaves, the save step may not run, and the claim would stay stuck until it expires.
+2. **Unmount cleanup:** [build-step.tsx](src/components/steps/build-step.tsx) now stops its `useObject` request when the screen unmounts, for example on "Change my goal" mid-generation. The server still saves what it finished.
+3. **Incremental-rendering tests:** [streaming.mocked.spec.ts](e2e/streaming.mocked.spec.ts) holds each response open and the test writes every piece itself, so there are no timing races.
+   - **Page generation:** a half-finished headline shows first. The hero and first benefit follow, with later sections still absent. The second benefit arrives without the first one disappearing, and the progress card stays up throughout.
+   - **Step 1 text:** the first words show while "Thinking…" is gone and Continue is hidden. Continue only appears after the reply ends.
+   - **Check that the test can fail:** I switched partial rendering off, the page test failed, and I restored the file.
+
+I also added a "Streaming review" entry to NOTES with what was checked, what was fixed, and the one thing still unproven. That gap is a model that really streams in small pieces. Proving it needs a different free model, which would be the benchmark I offered earlier.
+
+Do you want me to commit and push these changes?
+
+## User
+
+yes, commit and push
+
+> **Bash**: git add -A && git status --short && git commit -q -m "Streaming review: abort chat on disconnect, stop stream on unmount, incremental rendering tests - chat route passes req.signal so a left/stopped request stops the scrape and model call - BuildStep stops its useObject request on unmount - e2e/stre …
+
+## Assistant
+
+I committed the streaming changes and pushed them to main as `7ba9106`. The commit has the chat route abort, the unmount cleanup, the new [streaming.mocked.spec.ts](e2e/streaming.mocked.spec.ts) tests and the NOTES entry. Vercel should start a new deploy from it.
+
+Still open:
+- **Deployed checks:** the FAL_KEY and photo upload on the deployed site, and one landing-page run with the 55 s wait.
+- **Step 7:** the deployed-URL verification and the per-AC results in NOTES.
+- **Earlier offers:** the fallback wording, not counting a timeout as one of the 3 tries, and the free-model benchmark.
+
+Tell me which one you want next.
+
+## User
+
+FAL_KEY. is verified and working as expected, and landing was created successfully
+let's move on to step 7
+
+> **Bash**: grep -n -i "step 7\|^## \|^### " SPEC-M3.md | cut -c1-150; cat playwright.config.ts | head -50; grep -n "E2E_BASE_URL\|test:" package.json
+
+> **Bash**: sed -n 320,400p SPEC-M3.md | cut -c1-330; grep -n "M3.*AC\|## .*acceptance\|Step 7\|step 7" NOTES.md | head
+
+> **Bash**: (npm run build 2>&1 | tail -25); npm run lint 2>&1 | grep -ciE "error|warning"; npm run test:unit 2>&1 | grep -E "^ℹ (tests|pass|fail)"
+
+> **Bash**: curl -s -o /dev/null -w "home %{http_code}\n" https://ploy-ftu-pn3w.vercel.app/; curl -s -o /dev/null -w "dev fixtures page %{http_code}\n" https://ploy-ftu-pn3w.vercel.app/dev/artifact-fixtures; curl -sI https://ploy-ftu-pn3w.vercel.app/ | grep -i "x-vercel-id\|age\|etag" | head -3; grep -ln "dev/a …
+
+> **Bash**: E2E_BASE_URL=https://ploy-ftu-pn3w.vercel.app npx playwright test --project=mocked --grep-invert "NOTHING" --ignore-snapshots 2>&1 | grep -vE "^\s+✓" | tail -40
+
+> **Bash**: python3 - <<'EOF' for p in ['e2e/loading.mocked.spec.ts','e2e/streaming.mocked.spec.ts']: s=open(p).read() a="test.beforeAll(async () => {" b='''// The stub is a plain-http local server, and a browser on an https page cannot be redirected to it: these run against localhost only. test.skip(!!process. …
+
+> **Bash**: grep -n "skip" e2e/*.live.spec.ts e2e/*.mocked.spec.ts | grep -v "artifact-preview\|loading\|streaming" | cut -c1-170; E2E_BASE_URL=https://ploy-ftu-pn3w.vercel.app npx playwright test --project=live e2e/onboarding.live.spec.ts 2>&1 | tail -15
+
+## Assistant
+
+Next, the goals live spec on the deployed URL, run on its own.
+
+> **Bash**: E2E_BASE_URL=https://ploy-ftu-pn3w.vercel.app npx playwright test --project=live e2e/goals.live.spec.ts 2>&1 | tail -16
+
+> **Agent**: Investigate streaming goal cards
+
+> **Bash**: sed -n 20,40p e2e/goals.live.spec.ts; sed -n 1,30p test-results/goals.live-AC-21-35-status-d7c76-rds-through-the-real-routes-live/error-context.md 2>/dev/null | head -30
+
+> **Bash**: sed -i '' 's/expect(state).toEqual({ status: "site", profile: null, goal: null });/expect(state).toEqual({ status: "site", profile: null, goal: null, photo: null, artifact: null }); \/\/ M3 added photo and artifact/' e2e/goals.live.spec.ts && E2E_BASE_URL=https://ploy-ftu-pn3w.vercel.app npx playwri …
+
+> **Bash**: grep -n "maxDuration\|timeout(" src/app/api/goals/suggest/route.ts
+
+> **Bash**: E2E_BASE_URL=https://ploy-ftu-pn3w.vercel.app npx playwright test --project=live e2e/artifact.live.spec.ts 2>&1 | tail -25
+
+> **Bash**: sed -n 192,202p e2e/artifact.live.spec.ts | cut -c1-200; grep -n "MAX_BYTES\|too_large\|maxBytes\|MB" src/app/api/uploads/photo/route.ts | head; sed -n 1,25p test-results/artifact.live-photo-upload-0f1e3-fused-and-nothing-is-stored-live/error-context.md | cut -c1-200
+
+> **Bash**: grep -rn "MAX_PHOTO_BYTES =" src | cut -c1-160; grep -n "too_large\|413" src/components/steps/build-step.tsx src/lib/image-client.ts | cut -c1-160
+
+> **Bash**: python3 - <<'EOF' p='e2e/artifact.live.spec.ts' s=open(p).read() a=''' const tooBig = await upload(request, id, { name: "big.jpg", mimeType: "image/jpeg", buffer: Buffer.concat([fakeJpeg(), Buffer.alloc(5 * 1024 * 1024)]) }); expect(tooBig.status()).toBe(413); expect(await tooBig.json()).toEqual({ e …
+
+> **Bash**: set -a && . ./.env.local && set +a && echo "--- AC-41"; grep -n "FAL_KEY\|FAL_MODEL_ID\|NEXT_PUBLIC" .env.example; grep -rn "NEXT_PUBLIC_" src --include="*.ts" --include="*.tsx" | wc -l for v in FAL_KEY FIRECRAWL_API_KEY SUPABASE_SERVICE_ROLE_KEY AI_GATEWAY_API_KEY; do val="${(P)v}"; [ -n "$val" ] & …
+
+> **Bash**: ls -a | grep -i env; grep -n "create table.*artifacts" -A14 supabase/migrations/0003_artifacts.sql | cut -c1-140; cat .env.example 2>/dev/null | sed 's/=.*/=…/'
+
+> **Bash**: grep -rn "artifacts" supabase/migrations/*.sql | grep -i "create table" ; grep -n "FAL_" src/lib/fal.ts | cut -c1-150; grep -n "artifacts" -B1 -A14 supabase/migrations/0001*.sql | grep -n "create table" | head -2
+
+> **Bash**: sed -n 34,46p supabase/migrations/0001_init.sql; printf '\n# Ad creative (optional: without FAL_KEY the ad step makes a text-only branded card)\nFAL_KEY=\nFAL_MODEL_ID=\n' >> .env.example; tail -5 .env.example
+
+> **Bash**: set -a && . ./.env.local && set +a && SB="$SUPABASE_URL"; KEY="$SUPABASE_SERVICE_ROLE_KEY" H=(-H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -H "Prefer: return=representation") SID=$(curl -s -X POST https://ploy-ftu-pn3w.vercel.app/api/sessions | python3 -c "im …
+
+> **Bash**: cat >> NOTES.md <<'EOF' ## M3 step 7: deployed-URL run (2026-11-24, https://ploy-ftu-pn3w.vercel.app) Run in order, one Playwright command at a time, no fal call (`RUN_FAL` not set; the fal test stays skipped). | Run | Result | |---|---| | `npm run build`, `npm run lint`, `npm run test:unit` (local) …
+
+## Assistant
+
+Step 7's deployed-URL run is done, and the results and acceptance-criteria table are in NOTES. Nothing is committed yet. I ran no fal-calling test.
+
+**Results**
+| Run | Result |
+|---|---|
+| Build, lint, unit (local) | build ok, lint clean, 51 unit tests pass |
+| Mocked suite, local | 70 pass |
+| Mocked suite, deployed | 51 pass, 19 skipped (the dev-only fixtures page returns 404 in production by design, and the 4 stub tests need a local server) |
+| `onboarding.live`, deployed | 6 of 6 |
+| `goals.live`, deployed | 9 of 9, after fixing one stale test |
+| `artifact.live`, deployed | 12 pass, 1 skipped (the fal test), after one fix |
+
+**Found by the deployed run and fixed**
+- **Stale test:** the `goals.live` session-shape check hadn't been updated for the `photo` and `artifact` fields M3 added. It was a test bug, not an app bug.
+- **Upload size:** Vercel refuses any request body over 4.5 MB with a plain-text 413 before our route runs. The browser now maps any 413 to the "too large" message, and the test checks both size ranges. Real users aren't affected, because photos are shrunk in the browser first.
+- **Missing env vars:** `.env.example` had no `FAL_KEY` or `FAL_MODEL_ID`. I added both, empty.
+- **Stub tests on https:** they now skip when the target URL is https.
+
+**Acceptance criteria**
+- **Checked directly:**
+  - **AC-40:** `paid_growth` is rejected, `get_leads` is accepted, and `playbook`, `page` and `ad_creative` artifacts insert.
+  - **AC-41:** none of the four secret values appear in the built JS or the deployed home page.
+- **Partly:**
+  - **AC-48 (ad with a photo):** I did not run the live fal test. Your manual check showed `FAL_KEY` works.
+  - **AC-55 (activation query):** the events exist, but I didn't run the SQL file. Please paste [activation.sql](supabase/queries/activation.sql) into the Supabase SQL editor.
+- **Not testable:** AC-61 (explaining it without notes) is yours.
+- **Not checked:** whether `FAL_MODEL_ID` is set in Vercel. The code default applies when it's empty.
+
+**Goal-card streaming**
+The agent found it feasible but recommends not doing it now. With this model the three cards would still appear together after the same wait. It also creates real risks, such as cards changing during server cleanup, a Recommended badge that flips, and clicks before the suggestions are saved. The cheaper option is skeleton cards plus the progress guide from the build screen. This is recorded in NOTES.
+
+**One thing I found along the way**
+The goals suggestion route still has a 30 s function limit and a 25 s model abort, while page generation now waits 55 s. A slow free-model run could fall back to the default cards. I haven't changed it.
+
+Do you want me to commit and push these changes? I can also raise the goals timeout to match, refresh the transcript, and then do the headline check on real photos.
+
+## User
+
+commit and push everything
+
+> **Bash**: python3 - <<'EOF' p='NOTES.md' s=open(p).read() a="(I believe about 4.5 MB; I have\n not checked the current figure)" assert a in s s=s.replace(a,"(4.5 MB: confirmed on the deployed site in step 7, where\n a 5 MB upload got Vercel's own plain-text 413 before our route ran)") open(p,'w').write(s) EOF …
+
+## Assistant
+
+I committed everything and pushed it to main as `5a40d51`. Vercel should start a new deploy from it.
+
+The commit has the step 7 test fixes, the upload-size handling, the `.env.example` additions, the NOTES results and the goal-card streaming write-up. I also updated the lines you selected in NOTES. They said the 4.5 MB Vercel body limit was unchecked. They now say the deployed run confirmed it, when a 5 MB upload got Vercel's own plain-text 413.
+
+Still open:
+- **Activation SQL (yours):** paste [activation.sql](supabase/queries/activation.sql) into the Supabase SQL editor.
+- **Goals timeout:** `goals/suggest` still has a 25 s model abort and a 30 s function limit.
+- **Real-photo check:** I have 3 correct headlines so far and the spec asks for 5. Your manual tests on the deployed site would count.
+- **Transcript:** a refresh of `transcripts/`.
+- **Earlier offers:** the fallback wording, not counting a timeout as one of the 3 tries, and the free-model benchmark.
+
+Which one next?
+
+## User
+
+show me where the goal timeout is set
+
+> **Bash**: grep -n "maxDuration\|timeout(\|maxRetries" src/app/api/goals/suggest/route.ts
+
+## Assistant
+
+The goals timeout is set in [src/app/api/goals/suggest/route.ts](src/app/api/goals/suggest/route.ts) in three places:
+
+- **Function limit:** [route.ts:11](src/app/api/goals/suggest/route.ts#L11) has `export const maxDuration = 30;`. Vercel kills the function after 30 s.
+- **Model abort:** [route.ts:72](src/app/api/goals/suggest/route.ts#L72) has `abortSignal: AbortSignal.timeout(25_000)`. After 25 s the call is cancelled and the default cards are shown with the "couldn't tailor" note.
+- **Retries:** [route.ts:71](src/app/api/goals/suggest/route.ts#L71) has `maxRetries: 1`. The abort signal covers the whole call, so a retry shares the same 25 s.
+
+The 5 s gap between the abort and the function limit is the time left to save the result and log the event.
+
+I'd match it to the artifact route, which waits 55 s with a 60 s function limit. I'd put the numbers in [limits.ts](src/lib/artifact/limits.ts) so there is one source and the unit test covers the ordering. The matching client wait in [goal-step.tsx](src/components/steps/goal-step.tsx) needs a check too, because its give-up point has to stay above the server's. Do you want me to make that change?
+
+## User
+
+no, i think having users wait for 50s is too long for the goal cards to show up, can we change it to 35s for now
+
+> **Bash**: grep -n "[0-9]_000\|seconds\|timeout\|up to" src/components/steps/goal-step.tsx | cut -c1-170; grep -rn "25_000\|25 s\|30 s" src e2e NOTES.md SPEC-M3.md --include="*" -I 2>/dev/null | grep -i "goal\|suggest" | cut -c1-170 | head
+
+> **Bash**: sed -n 5,14p src/app/api/goals/suggest/route.ts; sed -n 1,32p src/components/steps/goal-step.tsx | cut -c1-150
+
+> **Bash**: python3 - <<'EOF' def sub(p,a,b): s=open(p).read(); assert a in s,(p,a); open(p,'w').write(s.replace(a,b,1)) sub('src/lib/artifact/limits.ts','/** The browser stops waiting after this many seconds and shows the failure state. */\nexport const CLIENT_GIVE_UP_SECONDS = 70;', '''/** The browser stops w …
+
+> **Bash**: npx playwright test --project=mocked e2e/goals.mocked.spec.ts 2>&1 | tail -3
+
+## Assistant
+
+The goal cards now wait at most 35 s for the model, down from 25 s of model wait, and the other two limits moved with it. tsc, lint, the unit tests (52) and the goals mocked suite (26) pass. Nothing is committed yet.
+
+| Limit | Before | Now |
+|---|---|---|
+| Model wait ([route.ts:72](src/app/api/goals/suggest/route.ts#L72)) | 25 s | **35 s** |
+| Function limit ([route.ts:11](src/app/api/goals/suggest/route.ts#L11)) | 30 s | 40 s |
+| Browser gives up ([goal-step.tsx:29](src/components/steps/goal-step.tsx#L29)) | 30 s | 45 s |
+
+- **Why the others moved:** the function limit has to stay above the model wait, with 5 s to save, or Vercel would kill the request before the fallback is stored. The browser's give-up has to stay above the function limit.
+- **Browser limit before:** it was 30 s, so it would have given up before a 35 s server wait could finish.
+- **Where it's recorded:** the numbers are in [limits.ts](src/lib/artifact/limits.ts), a unit test covers the ordering, and NOTES has the decision.
+
+This also raises the wait compared with before. The old 25 s abort was already shorter than the 35 s you picked, so some runs that used to fall back to the default cards will now finish. The worst case for the user is 35 s, not the 55 s used for pages. A very slow model run can still end in the default cards with the "couldn't tailor" note. Suggestions have taken 3 to 5 s so far, so this should be rare. NOTES says to check `tool_failed` events with reason `timeout` for `suggestGoals` if it shows up often.
+
+Do you want me to commit and push this?
+
+## User
+
+commit and push
+
+> **Bash**: git add -A && git status --short && git commit -q -m "Goal cards: model wait 35 s, function limit 40 s, browser gives up at 45 s Shared constants in limits.ts with an ordering unit test; NOTES records the decision and trade-off. Co-Authored-By: Claude Sonnet 5.5 <[email]>" && git push  …
+
+## Assistant
+
+I committed the goal-card timeout change and pushed it to main as `079d438`. Vercel should start a new deploy from it.
+
+The commit has the 35 s model wait, the 40 s function limit and the 45 s browser give-up. It also has the shared constants in [limits.ts](src/lib/artifact/limits.ts), the unit test for their order and the NOTES entry.
+
+Still open:
+- **Activation SQL (yours):** paste [activation.sql](supabase/queries/activation.sql) into the Supabase SQL editor.
+- **Real-photo check:** I have 3 correct headlines so far and the spec asks for 5. Your manual tests on the deployed site would count.
+- **Transcript:** a refresh of `transcripts/`.
+- **Earlier offers:** the fallback wording, not counting a timeout as one of the 3 tries, and the free-model benchmark.
+
+Which one next?
+
+## User
+
+refresh the transcript
+
+> **Bash**: ls -la transcripts; cat transcripts/README.md | head -40; ls scripts 2>/dev/null; git log --oneline -3 -- transcripts; wc -c transcripts/*.md; ls -la /Users/huanchen/.claude/projects/-Users-huanchen-Documents-ploy-ftu/*.jsonl
+
+> **Bash**: ls /private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/scratchpad/; head -c 1800 transcripts/02-claude-code-milestone1-ui-and-tests.md; echo; echo ----; tail -c 700 transcripts/02-claude-code-milestone1-ui-and-tests.md; grep -c "^## " transcripts/02-claude …
+
+## Assistant
+
+The export script from last time is still in the scratchpad. I'll read it, then re-run it.
+
+> **Bash**: cat /private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/scratchpad/export.py
+
+> **Bash**: S=/private/tmp/claude-501/-Users-huanchen-Documents-ploy-ftu/acc8eb1e-4466-4226-be63-b032c24b9131/scratchpad && sed -i '' 's/snapshot taken during Milestone 3 (steps 1 to 5)/snapshot taken after Milestone 3 step 7, the deployed-URL run/' $S/export.py && python3 $S/export.py /Users/huanchen/.claude/p …

@@ -7,7 +7,7 @@ Full history of how this project was built with AI coding agents, kept for the r
 | # | Tool | Covers | Transcript |
 | --- | --- | --- | --- |
 | 1 | Claude (desktop app chat) | Research of Ploy's FTU + funnel data, design canvas, system design doc, SPEC, Milestone 1 build | Share link: _TODO: paste link (re-share at the end so it includes every message)_ |
-| 2 | Claude Code | Setup, Supabase/AI Gateway debugging, Milestone 1 (UI, session context, tests, deploy) Milestone 2 (goal step), the MVP re-scope, and Milestone 3 steps 1 to 5 (three goals, artifact modules, previews, generate route, photo upload and fal) | [02-claude-code-milestone1-ui-and-tests.md](02-claude-code-milestone1-ui-and-tests.md) (cleaned export: tool outputs omitted, secrets and email redacted) |
+| 2 | Claude Code | Setup, Supabase/AI Gateway debugging, Milestone 1 (UI, session context, tests, deploy) Milestone 2 (goal step), the MVP re-scope, and Milestone 3 in full (three goals, artifact modules, previews, generate route, photo upload and fal, the build screen, timeouts and streaming review, the deployed-URL run) | [02-claude-code-milestone1-ui-and-tests.md](02-claude-code-milestone1-ui-and-tests.md) (cleaned export: tool outputs omitted, secrets and email redacted) |
 
 ## How to add a session
 
