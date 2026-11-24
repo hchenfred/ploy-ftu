@@ -118,6 +118,21 @@ Running log of decisions, places where I overrode the coding agent, and problems
   (Strict Mode would otherwise spend two model requests) and falls back to the four default goals on any failure,
   with a "Try again". Cards are a keyboard-friendly radiogroup (arrows move and select, Enter submits).
   Known edge: after taking the fallback defaults nothing was saved, so "Change my goal" asks the model again.
+- **M3 image generation: the reference product photo is scraped from the user's site; no upload in the MVP (human's
+  call, changed once).** The brief's requirement (pick a fal model that takes a product photo as a reference and
+  renders text well; copy outputs into Supabase Storage because fal URLs are not durable) is about **ad images for
+  the `paid_growth` goal**: an image model has never seen the user's real product, so it invents one; with a
+  reference photo it keeps the real product and changes only the scene and the headline. First chose "user upload
+  only", then switched to **scrape first**: `researchSite` collects the site's product images (the installed
+  Firecrawl 4.54.0 can return `images`, `branding.images.ogImage` and a `product` format), the best one is the
+  reference. **If no usable image is found, show a text-only branded ad card (our own component, brand colors,
+  name and headline), not a generated image.** **Upload is listed as "next"**, not built. Trade-off accepted:
+  faster to build, but users without product images on their site (and everyone on the no-website path) never see
+  the fal feature. **Later iteration (planned): "scrape first, upload as fallback"**, which covers every case
+  (an estimated 30-45 minutes of work for the upload, to be built in the milestone that does the `paid_growth` ad
+  properly). This overturns SPEC-M3's defaults ("one hero image, no uploads", "no `ad_creative`") and its
+  text-to-image default model (`flux/schnell` neither takes a reference image nor renders text well). SPEC-M3 needs
+  to be rewritten for it.
 - (add yours here)
 
 ### Backend test results (2026-11-23, local, via curl; no UI yet)
@@ -226,4 +241,145 @@ A read-only agent checked SPEC-M3.md against the code as it is now. Verdict: **n
 **Human setup for M3:** create a fal.ai account and key, add `FAL_KEY` (and optionally `FAL_MODEL_ID`) to
 `.env.local` and Vercel, apply `0003` by hand in the SQL editor. Verify fal's request/response shape with one real
 call before writing the client (it is not in the repo).
+
+## fal.ai model research for the M3B ad image (2026-11-23, from public docs; no API call made)
+Need: a model that takes a **reference product photo** and renders **text** well. Shortlist (all three accept multiple
+reference images): `google/nano-banana-2.1/edit` (primary: ~$0.04-0.06/image, typography tags, newest so least track
+record), `fal-ai/nano-banana-2/edit` (stable fallback, $0.08 at 1K), `openai/gpt-image-2.5/flare/edit` (reviews say the
+GPT image models render text best; set `quality: "medium"`, latency unknown). `flux-pro/kontext` is weakest on text.
+- **API shape (from fal's docs):** `Authorization: Key $FAL_KEY`; queue host `https://queue.fal.run/<endpoint id>`
+  (submit, poll `status_url`, GET `response_url`; retries 503/504) vs sync `https://fal.run/...` (no retry). Use the
+  queue from a 60 s function and give up at ~45 s. Request: `prompt`, `image_urls`, `num_images`, `aspect_ratio`,
+  `resolution`, `output_format`, `safety_tolerance`. Response: `images[{url, content_type, width, height}]`.
+  A Supabase signed URL should work as the reference image (fal fetches it, so give it a few minutes of life).
+- **Plain `fetch` is enough**, so no `@fal-ai/client` dependency.
+- **"fal URLs are not durable" is only half true:** outputs live at least 7 days by default (configurable), then are
+  deleted; copying into Supabase Storage is still the right call (queue results are kept only 1 hour).
+- **Gotchas:** new accounts start at 2 concurrent requests (sync over the cap returns 429); prepaid credits, requests
+  rejected below a lock threshold; Nano Banana has no 1.91:1 ratio (use 1:1 or 16:9 and crop); no source guarantees
+  spelling, so check the headline in a test; text already on the product may be altered.
+- **Evidence is weak:** text quality and product fidelity rest on reviews and vendor tests, not fal's pages.
+- **One real test call must check:** latency, real cost, product recognizable and headline spelled right in 5+ runs,
+  that a Supabase signed URL is accepted, how a safety refusal is reported, the output URL expiry, and that
+  `nano-banana-2.1` is stable enough (else use `nano-banana-2`).
+
+## MVP goals and how they connect to Ploy's primitives (decided 2026-11-23) [SUPERSEDED the same day: see "MVP re-scope" below]
+The take-home brief: build an AI-native FTU that connects users to value and converts them to paying customers, across
+Ploy's primitives (PloyDB, Ploybooks, sites/domains/publishing, brand guidelines, integrations, ads, analytics), and
+that can iterate and evolve from usage data, feedback and changing goals. Primitives as described by the human:
+**PloyDB** = built-in spreadsheet-style relational database (typed fields, lead capture, live template binding,
+scoped keys: public read-only vs form submissions write-only, secret columns hidden from AI agents, CSV import,
+30-day restore, CLI). **Ploybooks** = saved multi-step AI agent workflows, on demand or scheduled, with a library of
+pre-built ones (ship a homepage section by section, SEO guides, site audits...), able to act across the site and
+integrations (draft replies to contact forms, post weekly analytics to Slack).
+
+**Decisions (human approved all four):**
+1. **MVP fully supports two goals: `inbound_leads` and `paid_growth`.** The other two (`local_customers`,
+   `capture_and_follow_up`) are still shown (the human wants at least 4 options) but marked **coming soon**; clicking
+   one logs a `goal_interest` event and the user picks an available goal. That turns the missing goals into usage data
+   for the roadmap. Why these two: they exercise most of the brief (sites + publishing, ads, a PloyDB-style leads
+   table, analytics, brand); `local_customers` needs facts the scraper often misses, `capture_and_follow_up` needs
+   follow-up (Ploybooks, email) we are not building. Defaults I chose, not yet explicitly confirmed: the model still
+   ranks all four; "Something else" (custom goal) counts as interest and asks the user to pick an available goal.
+2. **Each goal is linked to primitives, in our own data, not by the model** (a goal catalog in `goals.ts`: available,
+   primary primitive, supporting, next). Shown as a tag on each goal card ("Uses: Sites · PloyDB") and logged on
+   `goal_chosen`.
+
+| Goal | First win | Supporting | Next (conversion hook) |
+| --- | --- | --- | --- |
+| inbound_leads | Sites: published page with a lead form | PloyDB (Leads table), Brand, Analytics | Ploybooks: draft a reply to each new lead |
+| paid_growth | Ads: the ad creative | Sites, Brand, Analytics | Integrations (connect an ad account), then a Ploybook weekly summary |
+| local_customers (soon) | Sites | Brand, Analytics | Integrations (e.g. a business listing) |
+| capture_and_follow_up (soon) | PloyDB | Sites | Ploybooks (a follow-up could be a draft shown to the owner, no email needed), Integrations |
+
+3. **M4 frames form submissions as a PloyDB "Leads" table** (typed fields, a `status` such as new/contacted,
+   write-only public access, owner read) and shows the owner a **spreadsheet-style leads view** with the status
+   column, so the user actually meets the primitive in the MVP.
+4. **The build screen names the generation steps as a playbook** (read your site, choose the layout, write the copy,
+   check the page): a wording and progress change only, no real Ploybooks feature.
+5. **The "you're live" screen uses the goal's `next` primitive as the call to action.** This is the conversion
+   moment the plan was missing (the brief asks to convert users into paying customers).
+
+**Not covered by the MVP (to say plainly in the write-up):** PloyDB as a real product (we have a stand-in table),
+Ploybooks (named steps only), integrations, custom domains, and any paywall or pricing. **How it evolves:** every
+step is already an event with props; suggestions carry `source`; profile fields carry provenance; goal-to-page
+mapping is data; the "coming soon" clicks and the `next` CTA are the usage signals for what to build next.
+
+**Follow-up decisions (human: "yes to all, let's try that first, we can iterate later"):**
+- **Test lead after publishing (`inbound_leads`).** Neither goal delivers value without traffic, so the owner gets a
+  "Send a test lead" button that writes a clearly labeled test lead (fixed fake content, `is_test = true`, max 3 per
+  page, `test_lead_sent` event) into the Leads table at once, so PloyDB is visible in the first session. Test leads show
+  a "Test" badge and are excluded from metrics and the verdict sentence.
+- **Goal cards show primary + one differentiating primitive** (`cardTags` in the catalog: inbound_leads Sites+PloyDB,
+  paid_growth Ads+Sites, local_customers Sites, capture_and_follow_up PloyDB+Ploybooks). Brand and Analytics are "always
+  on", said once under the cards ("Every goal includes your brand and analytics.").
+- **`paid_growth`'s deliverable is the creative itself:** the UI says plainly the ad has not been published or run
+  anywhere (no ad account connected) and offers "Copy ad text" (no image download in the MVP).
+- **Confirmed defaults:** the suggest model still ranks all four goals; "Something else" counts as interest
+  (`goal_interest`, custom) and asks the user to pick an available goal.
+- Known weak spots to revisit (from the goal review): ads cannot actually be run until the Integrations step;
+  `inbound_leads` and `capture_and_follow_up` are close until follow-up exists; free-text goals never work in the MVP;
+  a model-written label could promise something the card tags do not match (worth a test).
+
+## MVP re-scope: three goals, one artifact each, no publishing (decided 2026-11-23, supersedes the section above)
+The human asked to step back: the plan (four goals, a goal catalog with coming-soon cards, publishing, a public page,
+a leads table, a test lead, metrics) had become more complicated than an MVP needs. Adopted instead a suggestion:
+**one onboarding flow with three starting goals; the user enters a URL, the agent researches it and shows what it
+found to confirm, the user picks a goal, and one useful artifact is generated with a streamed preview that they can
+save; then a hand-off to the Ploy primitive where it lives.** If research fails or there is no website, ask for a
+short description (already built).
+
+| Goal (persona) | goal_type | First artifact (saved) | Where Ploy takes them next |
+| --- | --- | --- | --- |
+| Launch a product (ecommerce founder) | `launch_product` | Branded ad creative from an **uploaded product photo** (text-only branded card if no photo or fal fails) | Ads |
+| Get leads for my service (local service owner) | `get_leads` | Landing-page **preview** with a quote-request call to action (not published) | Sites and publishing |
+| Plan a marketing campaign (small marketing team) | `plan_campaign` | **Saved campaign playbook** with tasks and a success metric | Ploybooks and analytics |
+
+**Decisions (human, all "yes"):**
+1. Adopt the three-goal, one-artifact plan; **publishing is "next"** (not MVP).
+2. **Ad photo: upload now** (reverses "scrape first, upload later": with publishing gone, upload is simpler and safer
+   than the SSRF-guarded download of scraped images, and it works for users with no website).
+3. **Replace the four goal types with the three** (needs a migration; old M2 test goal rows are reset).
+4. **Option A for picking:** the user picks among the three goal cards, and the model marks one **"Recommended"** and
+   pre-selects it (no goal is chosen for them). Log recommended vs chosen: how often the model is right is a usage
+   signal for iterating. Option B (the model decides, the user confirms) was rejected: a wrong guess sends the user
+   to the wrong artifact, and the free model is unreliable at it.
+5. **Activation metric = time from onboarding start to first artifact saved** (`ftu_started` to `artifact_saved`,
+   from events we already write); **paid conversion is tracked separately** as a click on the hand-off. Record the
+   selected goal and tool failures (already logged) to explain where users got stuck.
+6. **A streamed preview is in** (reverses the earlier "no streaming"): the playbook and the page stream as a partial
+   structured object (`streamText` + `Output.object`, `useObject`); the ad shows named progress steps.
+
+**Removed from the MVP (kept as notes for later):** the goal catalog with availability, "coming soon" cards and
+`goal_interest`; the "Something else" custom goal; primitive tags beyond one line; the leads table (PloyDB view),
+test lead, `/metrics`, `/p/[slug]`, form submissions; the scrape-first ad photo with its SSRF-guarded download. The
+earlier drafts moved to `docs/next/` (`publish-and-measure.md`, `ad-creative-scrape-version.md`) with a banner.
+New spec: **`SPEC-M3.md`** (rewritten in place).
+
+**Follow-up decisions on SPEC-M3 (human review, 2026-11-23):**
+- Photo downsized in the browser (also strips EXIF location), type checked by magic bytes on the server: **good as written**.
+- The ad never invents an offer; the headline is the user's text or the business name; the ad needs no model call, only
+  fal: **good as written**.
+- After saving there is no "change my goal"; "Start over" begins a new session: **keep for now, to be discussed later**.
+- Streaming from the server (server validates, clips and saves; the row exists before the stream closes) and the cap of
+  3 generations per session (about $0.24 worst case with fal): not objected to, treated as accepted.
+- **Hand-off is a real link per primitive, using fake placeholder URLs for now** (`https://example.com/ploy/ads`,
+  `/sites`, `/ploybooks`), kept in the goal catalog so they are a one-table swap. The click logs `handoff_clicked`
+  first (keepalive fetch, never blocks the navigation); it opens in a new tab with `rel="noopener noreferrer"`.
+  This replaces the earlier "Coming soon" button.
+
+**Photo upload goes through our server (decision to keep; the trade-off is to be discussed in review):**
+- **What the spec does:** the browser downsizes the photo (longest side 1,600 px, JPEG 0.85, which also strips EXIF
+  location), then sends it to `POST /api/uploads/photo` as multipart. The server checks the real type by magic bytes and
+  the size (max 4 MB) and stores it in the private `assets` bucket with the service key. The only presigned URL in the
+  flow is the short-lived signed *read* URL of our stored copy that we give to fal.
+- **Why through the server (not a presigned direct upload):** (1) we validate before anything is stored, whereas a
+  direct upload lands the file first and can only be checked afterwards and deleted; (2) I was not certain of the exact
+  mechanics of Supabase signed upload URLs (raw PUT vs multipart form) and would have had to test it first; (3) no
+  browser key is needed, and the app deliberately has none.
+- **What it costs:** a Vercel serverless function accepts only a limited request body (I believe about 4.5 MB; I have
+  not checked the current figure), so the browser must downsize and the server cap is 4 MB; browsers cannot always
+  decode iPhone HEIC, so those get a "choose a JPEG, PNG or WebP photo" message; image processing happens in the browser.
+- **Alternative for a later iteration:** a signed direct upload to Supabase Storage allows large originals and keeps
+  the bytes off our function, at the price of validating after upload and handling cleanup of rejected files.
 
