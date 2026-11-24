@@ -425,3 +425,20 @@ New spec: **`SPEC-M3.md`** (rewritten in place).
   the scraped brand colors (hex-filtered in `researchSite`, then chosen by `deriveTheme`); the describe path has no brand
   so it is always the ink color.
 
+## Milestone 3, step 3 (preview components) built (2026-11-23)
+- Added `src/components/artifact/`: `PagePreview`, `PlaybookView`, `AdCard`, `BrandMark`. They render only our fields as
+  text (no raw HTML, no links from model or site text; the call to action is an inert styled span, the quote form is
+  decorative), accept **partial objects** so the same component renders a stream, show a skeleton when empty, and wrap
+  long words. `AdCard` re-validates the accent (`normalizeAccent`), shows the generated image or, if there is none or it
+  fails to load, the text-only branded card. `BrandMark` only accepts an `https:` logo (a scraped `javascript:` or `data:`
+  value becomes the letter avatar).
+- **Tested without a backend** on a development-only fixtures page (`/dev/artifact-fixtures`, normal / partial / empty /
+  hostile states). It is a 404 in a production build (checked with `next build` + `next start`). 15 new browser tests;
+  they skip when `E2E_BASE_URL` points at a deployed app.
+- **Bug found by the tests and fixed:** a broken image on a server-rendered page can fail before React attaches `onError`,
+  so the fallback never fired. Both `AdCard` and `BrandMark` now also check `complete && naturalWidth === 0` on mount.
+- Results: unit 30/30, mocked 50/50 (35 earlier + 15 new), lint, types and production build clean.
+- **Follow-up (not done):** the M1 `BrandCard` still hotlinks the scraped logo without the `https:` check that `BrandMark`
+  has. A `javascript:` value in an `<img src>` does not run in modern browsers, so the risk is low, but it should use the
+  same check.
+
