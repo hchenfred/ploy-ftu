@@ -152,6 +152,11 @@ export function BuildStep({ sessionId, state, onChange }: { sessionId: string; s
 
   useEffect(() => () => void (thumb && URL.revokeObjectURL(thumb)), [thumb]);
 
+  // Leaving this screen (Change my goal, Start over) closes the request instead of letting its result land on a screen that is gone.
+  // The server still saves what it finished, so nothing is lost.
+  const stopStream = stream.stop;
+  useEffect(() => () => stopStream(), [stopStream]);
+
   function fail(kind: Failure) {
     if (kind === "busy") {
       setPolling(true); // someone (a reload, a second tab) is already generating: wait for it

@@ -616,6 +616,20 @@ Two things to know about this model, both seen in real runs on 2026-11-23, plus 
   The wait note now says "It can take a minute or more."
 - Not changed: the fal ad deadline (40 s, capped to 50 s from the start of the request), the wording of the fallback note, and counting a timeout as one of the 3 tries (all still open).
 
+## Streaming review (2026-11-24)
+The brief asks for "streaming done right". Reviewed on request; the free model hides the streaming (one chunk after silent thinking), so it was easy to doubt.
+- **Where we stream:** step 1 (`streamText` -> `createUIMessageStreamResponse` -> `useChat`) and the page/playbook generation (`streamText` + `Output.object` -> text stream -> `useObject`,
+  partial objects render in the same preview component). **Where we do not, on purpose:** the goals suggestion (`generateText`: the 4 cards need to be validated and saved before they show)
+  and the fal ad (one call, no partial result).
+- **Checked and correct:** loading state comes from `status` (not only "submitted"); `useObject` validates the final object only in `onFinish`, and we always read the saved draft back
+  there, so a model that ignores the key names (client schema rejects it) still shows what the server saved; `stream.clear()` before each submit; the server saves before the stream closes.
+- **Fixed:** (1) the chat route now passes `abortSignal: req.signal`, so "Use a different website" stops the scrape and the model call instead of spending free-tier rate limit.
+  The generate route deliberately does not: if the client leaves, `flush` may not run and the claim would stay stuck. (2) `BuildStep` stops its `useObject` request on unmount.
+- **Test added:** `e2e/streaming.mocked.spec.ts` holds a response open and the test writes each piece itself (no timing races): the page preview shows a half-finished headline, then
+  the next sections one by one while the progress card stays up; step 1 text shows as it arrives and Continue waits for the end of the reply. Checked that the page test fails when
+  partial rendering is switched off.
+- **Still not shown with real data:** a model that really streams in small pieces. That needs a different free model (benchmark offered, not run).
+
 ## Free models available through the Vercel AI Gateway (read from its public catalog, 2026-11-24; nothing was called or tested)
 Source: `https://ai-gateway.vercel.sh/v1/models` (518 models; no key needed). The catalog's `free` tag is on only 2 models, so I also listed language models priced at zero or named
 `*-free`: **six in total, and every one is a reasoning model** (none is non-reasoning, none is tagged `fast`).

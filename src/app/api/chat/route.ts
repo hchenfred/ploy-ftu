@@ -33,6 +33,7 @@ export async function POST(req: Request) {
     messages: await convertToModelMessages(messages),
     tools: buildTools(sessionId),
     stopWhen: isStepCount(4), // cap the agent loop: tool call -> result -> reply
+    abortSignal: req.signal, // the user left or clicked "Use a different website": stop scraping and calling the model
   });
 
   return createUIMessageStreamResponse({
