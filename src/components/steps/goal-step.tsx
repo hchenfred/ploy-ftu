@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RATE_LIMIT_MESSAGE } from "@/lib/ai-errors";
+import { GOALS_CLIENT_TIMEOUT_MS } from "@/lib/artifact/limits";
 import {
   ALL_DEFAULT_GOALS,
   GOAL_CATALOG,
@@ -26,7 +27,7 @@ function requestSuggestions(sessionId: string): Promise<SuggestGoalsResponse> {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sessionId }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(GOALS_CLIENT_TIMEOUT_MS),
     })
       .then(async (res): Promise<SuggestGoalsResponse> =>
         res.ok ? ((await res.json()) as SuggestGoalsResponse) : { ok: false, reason: "unknown" },

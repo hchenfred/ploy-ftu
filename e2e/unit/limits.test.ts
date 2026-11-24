@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { CLAIM_TTL_MS, CLIENT_GIVE_UP_SECONDS, MODEL_TIMEOUT_MS, ROUTE_MAX_DURATION_SECONDS } from "../../src/lib/artifact/limits.ts";
+import {
+  CLAIM_TTL_MS,
+  CLIENT_GIVE_UP_SECONDS,
+  GOALS_CLIENT_TIMEOUT_MS,
+  GOALS_MODEL_TIMEOUT_MS,
+  GOALS_ROUTE_MAX_DURATION_SECONDS,
+  MODEL_TIMEOUT_MS,
+  ROUTE_MAX_DURATION_SECONDS,
+} from "../../src/lib/artifact/limits.ts";
 
 test("the route's literal maxDuration matches limits.ts", () => {
   const src = readFileSync("src/app/api/artifact/generate/route.ts", "utf8");
@@ -21,4 +29,13 @@ test("the route and the page use the shared constants, not their own numbers", (
   const route = readFileSync("src/app/api/artifact/generate/route.ts", "utf8");
   assert.match(route, /AbortSignal\.timeout\(MODEL_TIMEOUT_MS\)/);
   assert.match(readFileSync("src/lib/artifact-store.ts", "utf8"), /CLAIM_TTL_MS.*from "@\/lib\/artifact\/limits"/);
+});
+
+test("goal cards: the route's literal maxDuration matches, the order holds, and the route and page use the shared numbers", () => {
+  const route = readFileSync("src/app/api/goals/suggest/route.ts", "utf8");
+  assert.equal(Number(route.match(/export const maxDuration = (\d+);/)?.[1]), GOALS_ROUTE_MAX_DURATION_SECONDS);
+  assert.ok(GOALS_MODEL_TIMEOUT_MS + 5_000 <= GOALS_ROUTE_MAX_DURATION_SECONDS * 1000);
+  assert.ok(GOALS_CLIENT_TIMEOUT_MS > GOALS_ROUTE_MAX_DURATION_SECONDS * 1000);
+  assert.match(route, /AbortSignal\.timeout\(GOALS_MODEL_TIMEOUT_MS\)/);
+  assert.match(readFileSync("src/components/steps/goal-step.tsx", "utf8"), /AbortSignal\.timeout\(GOALS_CLIENT_TIMEOUT_MS\)/);
 });

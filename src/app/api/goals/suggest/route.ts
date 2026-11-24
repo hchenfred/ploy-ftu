@@ -2,13 +2,15 @@ import { generateText, InvalidToolInputError, isStepCount, NoSuchToolError } fro
 import { z } from "zod";
 import { buildGoalTools } from "@/lib/agent";
 import { isRateLimitError, isTimeoutError } from "@/lib/ai-errors";
+import { GOALS_MODEL_TIMEOUT_MS } from "@/lib/artifact/limits";
 import { logEvent } from "@/lib/events";
 import type { SuggestGoalsReason, SuggestGoalsResponse } from "@/lib/goals";
 import { GOALS_PROMPT } from "@/lib/prompts";
 import { loadSessionState } from "@/lib/session-state";
 import { buildGoalsInput, type SuggestGoalsOutput } from "@/lib/tools/suggest-goals";
 
-export const maxDuration = 30;
+// Must be a literal for Next and equal GOALS_ROUTE_MAX_DURATION_SECONDS (a unit test checks).
+export const maxDuration = 40;
 
 const Body = z.object({ sessionId: z.uuid() });
 
@@ -69,7 +71,7 @@ export async function POST(req: Request) {
       toolChoice: { type: "tool", toolName: "suggestGoals" }, // the model must answer through the tool
       stopWhen: isStepCount(1), // the tool result needs no follow-up text
       maxRetries: 1,
-      abortSignal: AbortSignal.timeout(25_000),
+      abortSignal: AbortSignal.timeout(GOALS_MODEL_TIMEOUT_MS),
     });
 
     const output = result.toolResults.find((r) => r.toolName === "suggestGoals")?.output as

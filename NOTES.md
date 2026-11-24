@@ -695,3 +695,10 @@ A read-only agent looked at it on request. It is feasible (`streamText` + `Outpu
 - **Real risks:** cards shown before the server cleans, clips and de-duplicates them could change or vanish; the "Recommended" badge depends on the first goal; the choose route reads the SAVED suggestions, so a click before the save would fail or log the default; raw JSON in half-finished strings; a failure midway after cards were shown.
 - **Decision:** not now. If a streaming model is adopted: show only complete cards, disable choosing until the stream ends and the saved list is read back, swap to the saved list at the end. Cheaper now: skeleton cards and the time-based progress guide from the build screen.
 - **Related finding:** `goals/suggest` still has `maxDuration = 30` and a 25 s model abort, while the artifact route now waits 55 s; a slow free-model run could fall back to the default cards. Not changed yet.
+
+### Decision: goal cards wait 35 s, not 55 s (user's choice, 2026-11-24)
+- `goals/suggest` had a 25 s model abort and `maxDuration = 30`. Matching the artifact route (55 s) was offered; the user judged that **waiting that long for three cards is too long**, so the
+  limit is **35 s** for now: model wait 35 s, function limit 40 s (5 s to save), browser gives up at 45 s (it used to abort at 30 s, which was already shorter than a longer server wait could be).
+  The numbers are in `src/lib/artifact/limits.ts` and `e2e/unit/limits.test.ts` checks them.
+- **Trade-off:** a slow free-model run (10 to 45 s of silent thinking) can still end in the default cards with the "couldn't tailor" note, and Try again costs another request. Seen suggestion timings
+  are 3 to 5 s, so 35 s is rarely reached. Revisit with a faster model or if the fallback shows up often in the events (`tool_failed` with reason `timeout` for `suggestGoals`).
