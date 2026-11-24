@@ -20,7 +20,7 @@ export default defineConfig({
   reporter: [["list"]],
   use: { baseURL, trace: "retain-on-failure", screenshot: "only-on-failure" },
   projects: [
-    // Fast, no LLM calls: /api/chat is mocked.
+    // Fast, no LLM calls: /api/onboarding is mocked.
     { name: "mocked", testMatch: /.*\.mocked\.spec\.ts/, use: { ...devices["Desktop Chrome"] } },
     // Real backend, Firecrawl and model. Paced; run with `npm run test:e2e:live`.
     { name: "live", testMatch: /.*\.live\.spec\.ts/, use: { ...devices["Desktop Chrome"] } },

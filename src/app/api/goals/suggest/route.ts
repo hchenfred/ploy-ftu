@@ -18,7 +18,7 @@ type Reason = SuggestGoalsReason;
 type SuggestResponse = SuggestGoalsResponse;
 
 // POST /api/goals/suggest: ask the model for goal suggestions for this session's business.
-// Why a route and not the /api/chat agent loop: there is no conversation, the step is deterministic, and
+// Why a route and not the /api/onboarding agent loop: there is no conversation, the step is deterministic, and
 // the free model's tool choice is unreliable. A forced tool choice removes "did it call the tool at all",
 // and a plain JSON response keeps the client simple (no useChat).
 export async function POST(req: Request) {

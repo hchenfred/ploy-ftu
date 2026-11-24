@@ -55,11 +55,11 @@ Page generation, artifacts, fal, uploads, publishing, `/p/[slug]`, `/metrics`, a
 - `sessions.status` exists with check `('site','goal','building','live')`; `goal_type`, `goal_label`, `goal_custom_text` exist; nothing writes them yet. `business_profiles` has `category` (unused in M1 and M2: see the note in FR-9), `summary`, `suggested_goals jsonb` (nullable), `content jsonb`, `field_sources jsonb`. Verified in `supabase/migrations/0001_init.sql`.
 - `researchSite` (`src/lib/tools/research-site.ts`) is the **only** writer of `business_profiles`, and only on success. The no-website path calls no tool, so **the user's description exists only in the chat transcript and is never saved.** The brief assumed otherwise; M2 fixes it (FR-8).
 - The `researchSite` upsert does not touch `summary`, `suggested_goals`. If a user returns to step 1 and researches another site, stale goals would survive. M2 clears them (FR-8).
-- `src/lib/agent.ts` exports `buildTools(sessionId)` and the `FtuUIMessage` type derived from it. `/api/chat` uses `isStepCount(4)` and `toUIMessageStream({ stream: result.stream, onError })`.
+- `src/lib/agent.ts` exports `buildTools(sessionId)` and the `FtuUIMessage` type derived from it. `/api/onboarding` uses `isStepCount(4)` and `toUIMessageStream({ stream: result.stream, onError })`.
 - `page.tsx` is one client component. "Use a different website" (`startOver`) clears chat state only; it does not touch the server.
 - `SessionProvider` owns `ftu_session_id` in `localStorage`; `useSession()` returns `{ sessionId, error, retry }`. It never checks that a stored id still exists server-side.
 - `logEvent`'s `EventName` is a closed union: `ftu_started | research_done | tool_failed`.
-- Mocked tests call the **real** `POST /api/sessions` (only `/api/chat` is mocked); `e2e/helpers.ts` has `mockChat`, `streams.*`, `db()` (read-only REST), `sessionIdOf`.
+- Mocked tests call the **real** `POST /api/sessions` (only `/api/onboarding` is mocked); `e2e/helpers.ts` has `mockChat`, `streams.*`, `db()` (read-only REST), `sessionIdOf`.
 
 ---
 
@@ -135,12 +135,12 @@ type SuggestGoalsOutput =
 - **Never throws.** Any DB error is caught → `tool_failed { tool: "suggestGoals", reason, detail }` and `{ ok:false, reason }`. If the model's tool arguments fail the Zod schema, the SDK reports a tool-call error to the route, which handles it (FR-10) and logs `reason: "invalid_output"`.
 
 ### FR-10 Route `POST /api/goals/suggest`
-Why a route and not the `/api/chat` agent loop: the goals call has no conversation, the step is deterministic, and the free model's tool selection is unreliable. A forced tool choice removes the "did it call the tool at all" failure mode and a plain JSON response keeps the client simple (no `useChat`).
+Why a route and not the `/api/onboarding` agent loop: the goals call has no conversation, the step is deterministic, and the free model's tool selection is unreliable. A forced tool choice removes the "did it call the tool at all" failure mode and a plain JSON response keeps the client simple (no `useChat`).
 
 - Body (Zod): `{ sessionId: uuid }`. Invalid → 400.
 - Guards, in order: session not found → 404; `status !== 'goal'` → 409 `{ error: "wrong_step" }`; `business_profiles.suggested_goals` already set → return them (`{ ok:true, source:"saved", … }`) **without** calling the model.
 - Otherwise `generateText` with:
-  - `model: process.env.MODEL_ID ?? …` (same as `/api/chat`), `system: GOALS_PROMPT` (§7), `prompt`: the profile data from the DB, built server-side by `buildGoalsInput(profile)` and wrapped in a `<business_data>` block (name, domain, brand name, `content.description` or `content.digest` truncated to 3,000 chars).
+  - `model: process.env.MODEL_ID ?? …` (same as `/api/onboarding`), `system: GOALS_PROMPT` (§7), `prompt`: the profile data from the DB, built server-side by `buildGoalsInput(profile)` and wrapped in a `<business_data>` block (name, domain, brand name, `content.description` or `content.digest` truncated to 3,000 chars).
   - `tools: { suggestGoals }`, `toolChoice: { type: "tool", toolName: "suggestGoals" }`, `stopWhen: isStepCount(1)` (the tool result needs no follow-up text), `maxRetries: 1`, `abortSignal: AbortSignal.timeout(25_000)`.
   - `export const maxDuration = 30`.
 - Response (always HTTP 200 after the guards, never a 500 page):
@@ -148,7 +148,7 @@ Why a route and not the `/api/chat` agent loop: the goals call has no conversati
   { ok: true; source: "model" | "saved"; summary: string; goals: SuggestedGoal[] }
   | { ok: false; reason: "no_profile" | "invalid_output" | "rate_limited" | "timeout" | "unknown" }
   ```
-  `rate_limited` reuses `isRateLimitError` (move it from `/api/chat/route.ts` to `src/lib/ai-errors.ts` and import it in both; no behavior change).
+  `rate_limited` reuses `isRateLimitError` (move it from `/api/onboarding/route.ts` to `src/lib/ai-errors.ts` and import it in both; no behavior change).
 - Events: on success `goals_suggested { ok: true, source: "model", ms, filled }` (`filled` = default-filled cards, 0 to 3; the card count is always 4); on failure `goals_suggested { ok: false, reason, ms }` **and** `tool_failed { tool: "suggestGoals", reason }`.
 
 ### FR-11 Route `POST /api/goals/choose` (save the chosen goal)
@@ -241,7 +241,7 @@ alter table business_profiles
 
 ## 7. System prompt changes
 
-`SYSTEM_PROMPT` (step 1, `/api/chat`) is **unchanged**. Add `GOALS_PROMPT` to `src/lib/prompts.ts`:
+`SYSTEM_PROMPT` (step 1, `/api/onboarding`) is **unchanged**. Add `GOALS_PROMPT` to `src/lib/prompts.ts`:
 
 ```
 You help new users of Ploy, a platform that builds and grows business websites.
@@ -299,7 +299,7 @@ ploy-ftu/
       └─ tools/suggest-goals.ts        # suggestGoals tool
 ```
 
-Edits to existing files: `researchSiteTool` (clear stale fields in the upsert, call `advanceStatus` on success), `session-provider.tsx` (`resetSession()`), `/api/chat/route.ts` (import `isRateLimitError` from `ai-errors.ts`).
+Edits to existing files: `researchSiteTool` (clear stale fields in the upsert, call `advanceStatus` on success), `session-provider.tsx` (`resetSession()`), `/api/onboarding/route.ts` (import `isRateLimitError` from `ai-errors.ts`).
 
 Rules carried over:
 - Every file that touches secrets or the service role client imports `"server-only"` (`session-state.ts`, `suggest-goals.ts`, `ai-errors.ts` if it grows secrets, all route files via the libs they use). `goals.ts` and `use-session-state.ts` must **not** import server modules.

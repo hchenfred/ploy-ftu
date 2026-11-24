@@ -14,7 +14,7 @@ import { Message, MessageContent, MessageGroup } from "@/components/ui/message";
 
 // The session id is not baked in here: it is sent per call (`{ body: { sessionId } }`),
 // so the transport never goes stale.
-const transport = new DefaultChatTransport({ api: "/api/chat" });
+const transport = new DefaultChatTransport({ api: "/api/onboarding" });
 
 // "https://www.starterbakery.com/menu" -> "starterbakery.com"
 function displayDomain(input: string): string {

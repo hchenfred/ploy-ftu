@@ -15,7 +15,7 @@ test.skip(!!process.env.E2E_BASE_URL?.startsWith("https:"), "needs a local http 
 
 test.beforeAll(async () => {
   server = createServer((req, res) => {
-    const chat = req.url?.includes("/api/chat");
+    const chat = req.url?.includes("/api/onboarding");
     res.writeHead(200, {
       "content-type": chat ? "text/event-stream" : "text/plain; charset=utf-8",
       ...(chat ? { "x-vercel-ai-ui-message-stream": "v1" } : {}),
@@ -86,7 +86,7 @@ test("page generation: the preview fills in piece by piece while the model is st
 
 test("step 1 text: the summary shows as it arrives, and Continue waits for the end of the reply", async ({ page }) => {
   await fakeBackend(page, { status: "site" });
-  await via(page, "**/api/chat", "/api/chat");
+  await via(page, "**/api/onboarding", "/api/onboarding");
   await page.goto("/");
   await page.getByRole("button", { name: "I don't have a website yet" }).click();
   await page.getByLabel("Describe your business in a sentence").fill("A bakery in Oakland that does catering");

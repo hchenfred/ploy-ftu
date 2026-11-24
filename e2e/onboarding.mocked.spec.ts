@@ -108,7 +108,7 @@ test("stream error shows the free-tier rate-limit message and a working Retry", 
 });
 
 test("network failure shows an error with Retry, never a blank page", async ({ page }) => {
-  await page.route("**/api/chat", (route) => route.abort("failed"));
+  await page.route("**/api/onboarding", (route) => route.abort("failed"));
   await page.goto("/");
   await expect(page.getByLabel("Website URL")).toBeEnabled();
 

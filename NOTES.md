@@ -705,3 +705,10 @@ A read-only agent looked at it on request. It is feasible (`streamText` + `Outpu
   The numbers are in `src/lib/artifact/limits.ts` and `e2e/unit/limits.test.ts` checks them.
 - **Trade-off:** a slow free-model run (10 to 45 s of silent thinking) can still end in the default cards with the "couldn't tailor" note, and Try again costs another request. Seen suggestion timings
   are 3 to 5 s, so 35 s is rarely reached. Revisit with a faster model or if the fallback shows up often in the events (`tool_failed` with reason `timeout` for `suggestGoals`).
+
+### Decision: `/api/chat` renamed to `/api/onboarding` (user's call, 2026-11-24)
+- The route is the step 1 agent (research a site, or take a description), not a general chat, and `chat` said nothing about the step. It was first kept as the SDK's conventional path, then
+  renamed. The folder moved to `src/app/api/onboarding/`; `site-step.tsx`, the e2e mocks, `playwright.config.ts`, SPEC.md, SPEC-M2.md and `docs/next` were updated. `useChat` is unchanged:
+  only its `api` string changed.
+- Older NOTES entries and the transcripts still say `/api/chat`, because they record what it was called at the time.
+- Checked: tsc, lint, 70 mocked tests; locally `POST /api/onboarding` answers 400 for an empty body and the old path returns 404.

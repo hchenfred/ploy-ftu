@@ -40,7 +40,7 @@ test.afterAll(() => {
 
 const useStub = async (page: Page) => {
   await fakeBackend(page, { status: "site" });
-  await page.route("**/api/chat", (route) => route.continue({ url: `http://127.0.0.1:${port}/api/chat` }));
+  await page.route("**/api/onboarding", (route) => route.continue({ url: `http://127.0.0.1:${port}/api/onboarding` }));
 };
 const thinking = (send: (o: unknown) => void, id: string) => {
   send({ type: "reasoning-start", id });

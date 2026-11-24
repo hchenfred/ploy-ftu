@@ -19,7 +19,7 @@ const BodySchema = z.object({
   messages: z.array(z.custom<UIMessage>()).min(1),
 });
 
-// POST /api/chat: the onboarding agent. Streams text and tool parts to useChat.
+// POST /api/onboarding: the onboarding agent. Streams text and tool parts to useChat.
 export async function POST(req: Request) {
   const parsed = BodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {

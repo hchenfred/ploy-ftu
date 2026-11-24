@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 import { DEFAULT_GOALS } from "../src/lib/goals";
 import type { GoalType, SessionState, SuggestedGoal, SuggestGoalsResponse } from "../src/lib/goals";
 
-// --- Mocked /api/chat: UI message stream (SSE) in the AI SDK v7 wire format -------------------
+// --- Mocked /api/onboarding: UI message stream (SSE) in the AI SDK v7 wire format -------------------
 
 type Chunk = Record<string, unknown>;
 
@@ -66,11 +66,11 @@ export const streams = {
   error: (message: string) => sse([{ type: "start" }, { type: "error", errorText: message }]),
 };
 
-/** Mock /api/chat. Each call returns the next body; every request body is recorded. */
+/** Mock /api/onboarding. Each call returns the next body; every request body is recorded. */
 export async function mockChat(page: Page, bodies: string[], delayMs = 0) {
   const requests: Record<string, unknown>[] = [];
   let i = 0;
-  await page.route("**/api/chat", async (route) => {
+  await page.route("**/api/onboarding", async (route) => {
     requests.push(route.request().postDataJSON());
     if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
     await route.fulfill({ status: 200, headers: HEADERS, body: bodies[Math.min(i++, bodies.length - 1)] });

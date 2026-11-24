@@ -42,7 +42,7 @@ Not in this milestone: fal.ai, Supabase Auth.
 1. Project scaffold, tooling, folder layout, `.env.example`.
 2. Supabase schema for **all 5 tables** + `assets` bucket (one migration file).
 3. `POST /api/sessions`: create a session, log `ftu_started`.
-4. `POST /api/chat`: agent with **one tool**, `researchSite`.
+4. `POST /api/onboarding`: agent with **one tool**, `researchSite`.
 5. Page `/`: Step 1 ("Your site") UI with progress bar, URL input, streaming agent output, brand card, failure fallback.
 6. Event logging helper used by the route + tool.
 7. Deploy to Vercel with env vars; deployed URL works.
@@ -62,10 +62,10 @@ Goal suggestions, page generation, publishing, `/p/[slug]`, `/metrics`, fal, upl
 - Heading "What's your website?", one URL input, one submit button, and a text link "I don't have a website yet".
 - Progress bar at the top: **Your site** (active) → Your goal → First win.
 - Accepts `starterbakery.com`, `www.x.com`, or `https://x.com`. The client trims the input; the server normalizes it to `https://…`.
-- Submitting sends a chat message to `/api/chat` with body `{ sessionId, messages }`.
+- Submitting sends a chat message to `/api/onboarding` with body `{ sessionId, messages }`.
 - "I don't have a website yet" opens a one-line text box ("Describe your business in a sentence"); submitting sends that text as the message instead. The agent must not call `researchSite` for it.
 
-### FR-3 Agent (`POST /api/chat`)
+### FR-3 Agent (`POST /api/onboarding`)
 - Uses `streamText` with:
   - `model`: AI Gateway model from `MODEL_ID`
   - `system`: prompt in `src/lib/prompts.ts` (see §6)
@@ -289,7 +289,7 @@ Everything must pass **on the deployed Vercel URL**, not just locally.
 
 **Explainability** (the reviewers pick parts at random)
 - [ ] AC-16 You can explain, without notes:
-  - how `useChat` → `/api/chat` → `streamText` → tool call → tool result → UI part flows;
+  - how `useChat` → `/api/onboarding` → `streamText` → tool call → tool result → UI part flows;
   - what `inputSchema` and `stopWhen` do;
   - why the tool returns `{ ok:false }` instead of throwing;
   - why events are written by server code, not by the LLM;
