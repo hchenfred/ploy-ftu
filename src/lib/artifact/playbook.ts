@@ -5,6 +5,7 @@ import {
   asObject,
   asString,
   displayName,
+  field,
   type ArtifactProfile,
   type DeepPartial,
   type Validated,
@@ -88,16 +89,13 @@ export function validatePlaybook(input: unknown, profile: ArtifactProfile): Vali
     return fallback;
   };
 
-  const modelTitle = clip(asString(o.title), L.title);
-  const tasks = asArray(o.tasks)
-    .map((raw) => {
-      const t = asObject(raw);
-      return {
-        title: clip(asString(t?.title), L.taskTitle),
-        detail: clip(asString(t?.detail), L.taskDetail),
-        when: clip(asString(t?.when), L.when),
-      };
-    })
+  const modelTitle = clip(asString(field(o, "title", "name")), L.title);
+  const tasks = asArray(field(o, "tasks", "steps", "actions"))
+    .map((raw) => ({
+      title: clip(asString(field(raw, "title", "name", "task")), L.taskTitle),
+      detail: clip(asString(field(raw, "detail", "details", "description")), L.taskDetail),
+      when: clip(asString(field(raw, "when", "timing", "time", "timeline", "week")), L.when),
+    }))
     .filter((t) => t.title && t.detail)
     .slice(0, PLAYBOOK_MAX_TASKS);
   if (!modelTitle && tasks.length === 0) return null; // nothing usable
@@ -107,17 +105,17 @@ export function validatePlaybook(input: unknown, profile: ArtifactProfile): Vali
     tasks.push(f);
     filled++;
   }
-  const m = asObject(o.successMetric);
+  const m = field(o, "successMetric", "metric", "kpi");
   return {
     value: {
       title: modelTitle || (filled++, fb.title),
-      objective: pick(o.objective, L.objective, fb.objective),
-      audience: pick(o.audience, L.audience, fb.audience),
+      objective: pick(field(o, "objective", "goal"), L.objective, fb.objective),
+      audience: pick(field(o, "audience", "targetAudience"), L.audience, fb.audience),
       tasks,
       successMetric: {
-        name: pick(m?.name, L.metric, fb.successMetric.name),
-        target: pick(m?.target, L.target, fb.successMetric.target),
-        howToMeasure: pick(m?.howToMeasure, L.howTo, fb.successMetric.howToMeasure),
+        name: pick(field(m, "name", "metric", "title"), L.metric, fb.successMetric.name),
+        target: pick(field(m, "target", "goal"), L.target, fb.successMetric.target),
+        howToMeasure: pick(field(m, "howToMeasure", "measure", "measurement", "tracking"), L.howTo, fb.successMetric.howToMeasure),
       },
     },
     filled,

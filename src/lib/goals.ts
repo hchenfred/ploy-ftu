@@ -2,6 +2,9 @@
 // DEFAULT_GOALS from here, and server files (routes, tools) import the same definitions.
 import { z } from "zod";
 import type { BrandProfile } from "@/lib/tools/research-site"; // type-only: erased, never loads the server module
+import type { AdCreative } from "./artifact/ad.ts";
+import type { PageDefinition } from "./artifact/page.ts";
+import type { Playbook } from "./artifact/playbook.ts";
 
 export const SESSION_STATUSES = ["site", "goal", "building", "live"] as const;
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
@@ -201,4 +204,16 @@ export type SessionState = {
     suggestedGoals: SuggestedGoal[] | null;
   };
   goal: null | { goalType: GoalType; label: string };
+  // The draft or saved artifact for the chosen goal (null until the first generation). Never includes the digest.
+  artifact: null | {
+    id: string;
+    type: "ad_creative" | "page" | "playbook";
+    source: "model" | "fallback" | "card" | "fal";
+    /** Why a model or fal call fell back, so the UI can say so (for example "rate_limited"), otherwise null. */
+    reason: string | null;
+    content: PageDefinition | Playbook | AdCreative;
+    imageUrl: string | null; // a signed URL of our stored copy of a generated image (added with the fal step)
+    saved: boolean;
+    generations: number;
+  };
 };

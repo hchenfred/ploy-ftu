@@ -30,3 +30,38 @@ export const asObject = (v: unknown): Record<string, unknown> | null =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 export const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 export const asString = (v: unknown): string => (typeof v === "string" ? v : "");
+
+// --- tolerant key lookup: a weak model may answer with its own capitalisation or a synonym ("Title", "Tasks", "Timing") ---
+const canon = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** The value of the first of `names` found in `obj`, ignoring case, spaces, dashes and underscores; undefined if none. */
+export function field(obj: unknown, ...names: string[]): unknown {
+  const o = asObject(obj);
+  if (!o) return undefined;
+  const byCanon = new Map<string, unknown>();
+  for (const [k, v] of Object.entries(o)) if (!byCanon.has(canon(k))) byCanon.set(canon(k), v);
+  for (const n of names) {
+    const v = byCanon.get(canon(n));
+    if (v !== undefined) return v;
+  }
+  return undefined;
+}
+
+/** Parse a JSON object out of raw model text, even when it is wrapped in a code fence or has prose around it. */
+export function extractJson(text: string): unknown {
+  const trimmed = text.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // fall through: try the outermost {...}
+  }
+  const a = trimmed.indexOf("{");
+  const b = trimmed.lastIndexOf("}");
+  if (a === -1 || b <= a) return undefined;
+  try {
+    return JSON.parse(trimmed.slice(a, b + 1));
+  } catch {
+    return undefined;
+  }
+}
+

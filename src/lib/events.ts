@@ -11,7 +11,8 @@ export type EventName =
   | "description_saved"
   | "goals_suggested"
   | "goal_chosen"
-  | "step_back";
+  | "step_back"
+  | "artifact_generated";
 
 export async function logEvent(
   sessionId: string | null,

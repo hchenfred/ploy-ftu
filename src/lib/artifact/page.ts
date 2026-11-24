@@ -5,6 +5,7 @@ import {
   asObject,
   asString,
   displayName,
+  field,
   type ArtifactProfile,
   type DeepPartial,
   type Validated,
@@ -92,13 +93,13 @@ export function validatePage(input: unknown, profile: ArtifactProfile): Validate
     return fallback;
   };
 
-  const hero = asObject(o.hero);
-  const modelHeadline = clip(asString(hero?.headline), L.headline);
-  const benefits = asArray(o.benefits)
-    .map((raw) => {
-      const b = asObject(raw);
-      return { title: clip(asString(b?.title), L.benefitTitle), text: clip(asString(b?.text), L.benefitText) };
-    })
+  const hero = field(o, "hero", "header");
+  const modelHeadline = clip(asString(field(hero, "headline", "title")), L.headline);
+  const benefits = asArray(field(o, "benefits", "features"))
+    .map((raw) => ({
+      title: clip(asString(field(raw, "title", "name", "heading")), L.benefitTitle),
+      text: clip(asString(field(raw, "text", "description", "detail")), L.benefitText),
+    }))
     .filter((b) => b.title && b.text)
     .slice(0, PAGE_BENEFITS);
   if (!modelHeadline && benefits.length === 0) return null; // nothing usable
@@ -108,24 +109,24 @@ export function validatePage(input: unknown, profile: ArtifactProfile): Validate
     benefits.push(f);
     filled++;
   }
-  const about = asObject(o.about);
-  const quote = asObject(o.quote);
+  const about = field(o, "about", "aboutUs");
+  const quote = field(o, "quote", "quoteRequest", "contact");
   return {
     value: {
       hero: {
         headline: modelHeadline || (filled++, fb.hero.headline),
-        subhead: pick(hero?.subhead, L.subhead, fb.hero.subhead),
-        cta: pick(hero?.cta, L.cta, fb.hero.cta),
+        subhead: pick(field(hero, "subhead", "subheadline", "subtitle"), L.subhead, fb.hero.subhead),
+        cta: pick(field(hero, "cta", "button", "callToAction"), L.cta, fb.hero.cta),
       },
       benefits,
       about: {
-        title: pick(about?.title, L.aboutTitle, fb.about.title),
-        text: pick(about?.text, L.aboutText, fb.about.text),
+        title: pick(field(about, "title", "heading"), L.aboutTitle, fb.about.title),
+        text: pick(field(about, "text", "description", "body"), L.aboutText, fb.about.text),
       },
       quote: {
-        title: pick(quote?.title, L.quoteTitle, fb.quote.title),
-        text: pick(quote?.text, L.quoteText, fb.quote.text),
-        button: pick(quote?.button, L.button, fb.quote.button),
+        title: pick(field(quote, "title", "heading"), L.quoteTitle, fb.quote.title),
+        text: pick(field(quote, "text", "description", "body"), L.quoteText, fb.quote.text),
+        button: pick(field(quote, "button", "cta", "submit"), L.button, fb.quote.button),
       },
     },
     filled,

@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { logEvent } from "@/lib/events";
+import { getArtifact } from "@/lib/artifact-store";
 import type { SessionState, SessionStatus, SuggestedGoal } from "@/lib/goals";
 
 /**
@@ -62,6 +63,25 @@ export async function loadSessionState(sessionId: string): Promise<LoadResult> {
       return { ok: false, reason: "error" };
     }
 
+    const goal: SessionState["goal"] =
+      session.goal_label && session.goal_type ? { goalType: session.goal_type, label: session.goal_label } : null;
+
+    // The draft or saved artifact, only if it belongs to the goal that is chosen now (a leftover from another goal is hidden).
+    const row = goal ? await getArtifact(sessionId) : null;
+    const artifact: SessionState["artifact"] =
+      goal && row && row.goal_type === goal.goalType && row.data?.content
+        ? {
+            id: row.id,
+            type: row.type,
+            source: row.data.meta?.source ?? "fallback",
+            reason: row.data.meta?.reason ?? null,
+            content: row.data.content as NonNullable<SessionState["artifact"]>["content"],
+            imageUrl: null, // signed URLs for generated images arrive with the fal step
+            saved: !!row.saved_at,
+            generations: row.data.meta?.generations ?? 0,
+          }
+        : null;
+
     return {
       ok: true,
       state: {
@@ -76,7 +96,8 @@ export async function loadSessionState(sessionId: string): Promise<LoadResult> {
               suggestedGoals: (profile.suggested_goals as SuggestedGoal[] | null) ?? null,
             }
           : null,
-        goal: session.goal_label && session.goal_type ? { goalType: session.goal_type, label: session.goal_label } : null,
+        goal,
+        artifact,
       },
     };
   } catch (err) {

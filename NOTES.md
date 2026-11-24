@@ -442,3 +442,54 @@ New spec: **`SPEC-M3.md`** (rewritten in place).
   has. A `javascript:` value in an `<img src>` does not run in modern browsers, so the risk is low, but it should use the
   same check.
 
+## Milestone 3, step 4 (generate route) built (2026-11-23)
+- **Added:** `POST /api/artifact/generate` (page and playbook: one streamed model request with `streamText` + `Output.object`;
+  `launch_product`: the text-only ad card for now), `src/lib/artifact-store.ts` (claim, cap of 3, finish), `PAGE_PROMPT` and
+  `PLAYBOOK_PROMPT`, `buildArtifactInput`, `SessionState.artifact`, the `artifact_generated` event.
+- **The save happens before the response closes:** the text stream is piped through a `TransformStream` whose `flush`
+  validates, clips and saves, so the client's refresh always finds the row. Never an error page: an invalid or failed model
+  answer saves the deterministic fallback and logs `tool_failed` with a reason.
+- **The claim:** an optimistic conditional write (same generation count and claim stamp, over PostgREST JSON-path filters), so
+  6 parallel requests produced exactly 1 winner and 5 "busy"; the count never exceeds 3 (failures count, which caps cost).
+  `finish` only writes if the session is still `building` and the claim is still ours.
+- **Real-model findings (nvidia/nemotron-3.5-lightning-free), the reason for several changes:**
+  1. First two real runs both saved the **fallback**: the model returned good content under its own keys (`Title`, `Tasks`,
+     `Week`/`Timing`) so the SDK's strict schema parse failed. Fixed three ways: the prompts now spell out the exact JSON keys;
+     the validators read keys tolerantly (case, spaces, synonyms); and the route falls back to `extractJson(result.text)`
+     when the SDK parse fails. After that: playbook (11 s) and page (30 s) saved with `source: model`.
+  2. **It is a reasoning model:** ~2,500 reasoning tokens (10 to 45 s) before it answers, then the whole answer arrives as ONE
+     text delta, so the "stream" delivers a single chunk. The route is built to stream, but incremental delivery was not observed
+     with this model. The route's cap is now 50 s (was 40 s) because one run took 45 s. A different or paid model would change this.
+- **Tests:** unit 35/35 (new: tolerant keys, `extractJson`, the real model's capitalised answer, prompt builder); a live spec
+  `e2e/artifact.live.spec.ts` (guards, card, cap, saved, parallel claim, hidden stale draft, and two paced model tests).
+- **Moved:** the client `useObject` wiring is now part of step 6 (`BuildStep`), where it can be tested end to end.
+- **One flaky test, not reproduced:** a preview test failed once while a live test was loading the same server; it then passed
+  90/90 over six repeats. Unknown cause; watch for it.
+- **Not done yet (spec'd for step 6):** `step/back` does not delete the draft or stored files yet. A leftover draft for another
+  goal is hidden by `goal_type`, and the next claim for the new goal starts its own count.- **Live spec result:** `artifact.live.spec.ts` **7/7 pass** on a clean run (the guards, the card, the cap of 3, a saved
+  artifact, 6 parallel requests, a hidden stale draft, and the two paced real-model tests, both `model`-written or labeled
+  fallback). A first run showed 2 failures that were mine: I ran the mocked suite at the same time, and two Playwright runs
+  wipe the same `test-results` folder (`ENOENT … traces`). Do not run two Playwright commands at once.
+- Agent review of the route (read-only) found gaps to handle later: no screen calls the route yet (steps 5 and 6); when the
+  user goes back mid-generation the route still answers 200 with nothing stored (`saved: false` is only logged); a server
+  that dies mid-generation leaves a claim for 60 s that still counts toward the cap; `step/back` does not delete the draft yet;
+  `filled` (parts rescued from the fallback) is not stored; `"blocked"` is spec'd as a reason but never used.
+
+## Model constraints to remember (nvidia/nemotron-3.5-lightning-free, the free model in `MODEL_ID`)
+Two things to know about this model, both seen in real runs on 2026-11-23, plus the limits we already knew:
+1. **It is a reasoning model, so nothing streams mid-answer.** It thinks silently first (one raw run: about 2,500 reasoning
+   tokens, 998 reasoning deltas, 45 s) and then sends the whole answer as ONE text delta. The route is built to stream
+   (`streamText` + `Output.object`, the saved row exists before the response closes), but with this model the client gets a
+   single chunk at the end, so a streamed preview shows nothing until it is done. Incremental delivery has NOT been observed.
+   Seen timings: goal suggestions 3 to 5 s; playbook 11 to 16 s; landing page 28 to 30 s; one run took 45 s.
+   Consequences: the build screen (step 6) must show named progress steps and an honest wait note ("up to a minute"), not rely
+   on streamed text; the route's cap is 50 s with `maxDuration = 60`, so a run slower than that becomes the saved fallback
+   (`reason: timeout`).
+2. **It does not reliably follow the schema.** It returned good content under its own keys (`Title`, `Tasks`, `Week`/`Timing`),
+   so a strict parse fails and the generic fallback would be saved. Handled by spelling out the exact JSON keys in the prompts,
+   reading keys tolerantly in the validators, and parsing the raw text when the SDK's strict parse fails. A paid or different
+   model may follow the schema and may stream.
+- Already known: about 5 requests a minute (tests are paced, never two Playwright commands at once); weak tool calling.
+- **Swapping the model is only `MODEL_ID`**, but re-check three things after a swap: does the answer follow the schema,
+  does it stream (a check that counts chunks: the script that showed "1 chunk" is the one to rerun), and the latency.
+

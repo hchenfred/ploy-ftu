@@ -151,6 +151,7 @@ export async function fakeBackend(page: Page, init: FakeInit = {}) {
       suggestedGoals: init.suggestedGoals === undefined ? null : init.suggestedGoals,
     },
     goal: init.goal ?? null,
+    artifact: null,
   };
   const log = { getState: 0, suggest: 0, choose: [] as Record<string, unknown>[], back: 0, describe: [] as Record<string, unknown>[] };
   let stale = !!init.staleFirst;
@@ -222,7 +223,7 @@ export async function fakeBackend(page: Page, init: FakeInit = {}) {
 // --- Milestone 2 live tests: seed a session straight into Supabase (service role), so goal-step tests do not
 // spend model requests on step 1. ----------------------------------------------------------------------------
 
-async function dbWrite<T = Record<string, unknown>>(method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T[]> {
+export async function dbWrite<T = Record<string, unknown>>(method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T[]> {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing (.env.local)");
@@ -240,7 +241,7 @@ export async function seedSession(
   page: Page,
   opts: {
     status?: "site" | "goal" | "building";
-    profile?: { name?: string | null; url?: string | null; content?: Record<string, unknown>; summary?: string | null };
+    profile?: { name?: string | null; url?: string | null; content?: Record<string, unknown>; summary?: string | null; brand?: Record<string, unknown> };
     suggestedGoals?: SuggestedGoal[] | null;
     goal?: { goal_type: string; goal_label: string };
   } = {},
@@ -254,7 +255,7 @@ export async function seedSession(
       session_id: s.id,
       name: opts.profile.name ?? null,
       url: opts.profile.url ?? null,
-      brand: {},
+      brand: opts.profile.brand ?? {},
       content: opts.profile.content ?? {},
       summary: opts.profile.summary ?? null,
       suggested_goals: opts.suggestedGoals ?? null,
@@ -267,6 +268,7 @@ export async function seedSession(
 export const STARTER_PROFILE = {
   name: "Starter Bakery",
   url: "https://starterbakery.com/",
+  brand: { name: "Starter Bakery", colors: ["#01468B"] },
   content: {
     digest:
       "Starter Bakery. Fresh sourdough, pastries and coffee baked every morning in San Francisco. Shops in the Mission and the Marina. Catering and wholesale for cafes and offices. Order online for pickup. Open daily 7am to 6pm.",
