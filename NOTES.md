@@ -163,3 +163,67 @@ Model: free `nvidia/nemotron-3.5-lightning-free`.
 - Manual testing on the deployed URL by the human: works as expected.
 - Status: all Milestone 1 acceptance criteria verified except AC-16 (explainability, for the human to answer live).
 
+## Milestone 2 on production (2026-11-23): https://ploy-ftu-pn3w.vercel.app
+
+Everything below was run against the deployed URL (`E2E_BASE_URL`), after pushing `909b428`.
+
+| Run | Result |
+| --- | --- |
+| Mocked suite (`npm run test:e2e`) | **32/32 pass** (23 new goal-step tests + the 9 from M1) |
+| M2 live suite (`goals.live.spec.ts`) | **9/9 pass** (2.7 min; 6 tests spend no model request, 3 use the real model + Firecrawl) |
+| M1 live regression (`onboarding.live.spec.ts`) | **6/6 pass** (3.6 min) |
+| Page console errors on `/` | **0** (headless Chrome) |
+| Secret values in the 9 responses the browser loads | **none** of the 4 found |
+| New routes deployed | bad-input probes return 400/404/400/400/400 |
+| Manual testing by the human on the deployment | works as expected |
+
+### Acceptance criteria
+| AC | Status | How |
+| --- | --- | --- |
+| AC-17 | Pass | `npm run lint` + `npm run build` zero errors; M1 mocked suite unchanged and green |
+| AC-18 | Pass | Both constraints reject invalid rows (Postgres error 23514) and accept valid ones. Written as drop-if-exists + add, so re-running is safe **by construction; I did not run it twice** |
+| AC-19 | Pass | No secrets in `.next/static` or the production responses; `goals.ts` has only a type-only server import; `use-session-state.ts` imports nothing server-side; routes use `supabase-server.ts` (`server-only`) |
+| AC-20 | Pass | Mocked (3 statuses + refresh) and live (refresh at goal and building) |
+| AC-21 | Pass | Mocked stale-id test; live 400/404 and no `digest` in the state |
+| AC-22 | Pass | Live full run: status `goal` and `step_changed` set by the server while the page waits on Continue |
+| AC-23 | Pass | Live: description saved, `url` null, status `goal`, `description_saved` event |
+| AC-24 | Verified by script, not in a suite | In step 2 a seeded stale profile had `suggested_goals`/`summary` cleared by a fresh research. Not part of the Playwright suites |
+| AC-25 | Pass | Mocked: loading status within 1.5 s, then 4 cards + "Something else" |
+| AC-26 | Pass | Live: 4 goals from the real model, saved with `summary`, `goals_suggested` has `ms` and `filled`, every goal has `source` (took ~5 s, so no fallback) |
+| AC-27 | Pass | Mocked + live: zero suggest requests with saved suggestions, also after a refresh |
+| AC-28 | Pass | Mocked (no label sent) + live (DB label is the stored one, `goal_chosen` logged) |
+| AC-29 | Pass | Mocked + live (type null, label "Custom goal", trimmed text) |
+| AC-30 | Pass | Mocked + live (end state, step 3, "Coming soon", no `artifacts` row) |
+| AC-31 | Pass | Mocked + live (goal cleared, cards kept, zero suggest requests) |
+| AC-32 | Pass (mocked) | All 5 failure reasons and a network error show the fallback with 4 default cards; a default card saves the server's label. **The 30 s client-side stall is not tested** (it would add 30 real seconds) |
+| AC-33 | Pass (mocked) | "Try again" replaces the defaults with the suggestions |
+| AC-34 | **Not verified end to end** | Unit-level only: `normalizeGoals` returns null for zero usable goals (which becomes `invalid_output`). I never forced the model to return invalid tool arguments or skip the tool. The agent that traced the code could not confirm whether SDK v7 throws or returns an invalid-tool-input error; either way the user gets `invalid_output` and the fallback |
+| AC-34b | Pass | Unit tests (`normalizeGoals`, `clip`) + mocked UI (4 identical cards in stored order) |
+| AC-35 | Pass | Live: 409 outside the step, 400 for a type that was not offered, nothing changed |
+| AC-36 | Pass | Mocked (incl. failed back stays on step 2 with an alert) + live (DB cleared, `step_back` logged) |
+| AC-37 | Pass | Mocked: failed research -> describe -> Continue -> step 2 |
+| AC-38 | For the human | Explainability questions, answered on the Loom |
+
+### Problems found while building M2 (see the decisions above for the fixes)
+- Stale `next dev` module cache gave `buildGoalTools is not a function` after adding an export; restarting the dev server fixed it (not a code bug).
+- `0002_goals.sql` as DO blocks failed to paste partially (`begin` read as a transaction); rewrote it as four plain statements.
+- A second Continue button in the no-website path; goal labels cut mid-phrase by a schema `max()`; `category` was a field nothing read.
+
+## Milestone 3: investigation and what to fix in the spec first
+A read-only agent checked SPEC-M3.md against the code as it is now. Verdict: **not ready to implement as written**.
+1. Replace `profile.category` (image prompt, fallback copy, compose input): it is never written now. Use `summary`.
+2. The `composePage` model schema puts hard `max()` on every field, repeating the mistake fixed for goal labels
+   (a violation sends the whole page to the fallback). Use short wording plus the server-side `clip()`.
+3. `buildImagePrompt` is planned in the server-only `fal.ts`, which Playwright unit tests cannot import: move it
+   into `src/lib/page/`.
+4. `playwright.config.ts` starts `npm run dev` for every project, which conflicts with a "no web server" unit
+   project; there is also no `test:unit` script yet.
+5. Race in generation: two concurrent calls can orphan an image, and `step/back` during generation can leave a stale
+   page. Reuse one artifact id per session and recheck `status` before writing.
+6. `researchSite` uses `onlyMainContent`, so footer facts (phone, hours) are often missing; markdown escapes can
+   break verbatim matching. The describe path never gets any.
+7. Update the M2 assertions M3 breaks: `goals.mocked.spec.ts` ("Coming soon" / no artifacts) and `goals.live.spec.ts`.
+**Human setup for M3:** create a fal.ai account and key, add `FAL_KEY` (and optionally `FAL_MODEL_ID`) to
+`.env.local` and Vercel, apply `0003` by hand in the SQL editor. Verify fal's request/response shape with one real
+call before writing the client (it is not in the repo).
+
