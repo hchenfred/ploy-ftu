@@ -1,5 +1,7 @@
 # ploy-ftu
 
+**Live demo:** https://ploy-ftu-pn3w-bpqbc8e40-hchen1.vercel.app/
+
 first time user experience
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).

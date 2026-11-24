@@ -682,12 +682,12 @@ Run in order, one Playwright command at a time, no fal call (`RUN_FAL` not set; 
 | 49 to 51 text-only card, headline, fallback | pass | mocked + unit |
 | 52 regenerate cap, busy, stale write | pass | mocked + `artifact.live` |
 | 53, 54 save, hand-off | pass | mocked + `artifact.live` |
-| 55 activation query | partly | the events exist and carry `secondsSinceStart` (7 saved runs from the tests, median 4 s, not real usage); the SQL file itself was not run by me: paste `supabase/queries/activation.sql` into the Supabase SQL editor |
+| 55 activation query | pass | the user ran `supabase/queries/activation.sql` in the Supabase SQL editor (the day before this run; I did not see the output). The events carry `secondsSinceStart` (7 saved runs from the tests, median 4 s by my REST check, not real usage) |
 | 56, 57 resume, change goal | pass | mocked + `artifact.live` |
 | 58 to 60 failures, earlier guarantees, hostile content | pass | mocked + unit |
 | 61 explainability | for the human | not testable |
 
-**Still open:** the headline and fidelity check on real product photos (3 correct headlines so far; the spec asks for 5), the activation SQL in the editor, and the free-model benchmark.
+**Still open:** the headline and fidelity check on real product photos (3 correct headlines so far; the spec asks for 5) and the free-model benchmark.
 
 ## Streaming the goal cards: investigated, not built (2026-11-24)
 A read-only agent looked at it on request. It is feasible (`streamText` + `Output.object` + `useObject`, saved before the response closes, like the artifact route), about 200 to 300 lines plus test rewrites.
